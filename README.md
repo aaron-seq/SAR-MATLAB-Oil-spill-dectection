@@ -8,27 +8,27 @@
 
 A state-of-the-art system for detecting and segmenting oil spills in Synthetic Aperture Radar (SAR) satellite imagery using both traditional computer vision and modern deep learning techniques.
 
-## 🌟 Features
+## Features
 
-### 🔬 Advanced Analysis Capabilities
+### Advanced Analysis Capabilities
 - **Multi-Model Architecture**: Support for U-Net, DeepLabV3+, FPN, and custom models
 - **Traditional Methods**: Optimized implementations of threshold-based, clustering, and morphological techniques
 - **Real-time Processing**: FastAPI-based REST API for production deployments
 - **Comprehensive Evaluation**: 15+ evaluation metrics including IoU, Dice, boundary F1, and SAR-specific measures
 
-### 🚀 Modern Infrastructure
+### Modern Infrastructure
 - **Cloud-Ready**: Pre-configured for Railway, Render, Vercel, and Docker deployments
 - **Containerized**: Docker and Docker Compose support for easy scaling
 - **Production-Ready**: Health checks, logging, monitoring, and error handling
 - **Developer-Friendly**: Comprehensive test suite, documentation, and development tools
 
-### 🎯 Key Improvements Over Original
+### Key Improvements Over Original
 - **10x Performance**: Optimized algorithms and modern Python libraries
 - **Scalable Architecture**: Microservices-ready with async processing
 - **Enhanced Accuracy**: Deep learning models with attention mechanisms
 - **Better Usability**: Web interface, API endpoints, and interactive notebooks
 
-## 🛰️ About SAR Oil Spill Detection
+## About SAR Oil Spill Detection
 
 Synthetic Aperture Radar (SAR) is crucial for marine oil spill monitoring because:
 
@@ -39,7 +39,7 @@ Synthetic Aperture Radar (SAR) is crucial for marine oil spill monitoring becaus
 
 When oil spills occur, they reduce wave energy on the ocean surface, appearing as dark regions in SAR images due to decreased backscatter.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option 1: Using Docker (Recommended)
 
@@ -99,7 +99,7 @@ npm install -g vercel
 vercel --prod
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ### System Components
 
@@ -107,23 +107,23 @@ vercel --prod
 ┌─────────────────────────────────────────────────────────┐
 │                   SAR Oil Spill Detection System        │
 ├─────────────────────────────────────────────────────────┤
-│  🌐 API Layer (FastAPI)                                │
+│   API Layer (FastAPI)                                │
 │  ├── REST Endpoints                                     │
 │  ├── Authentication & Rate Limiting                     │
 │  └── Request/Response Validation                        │
 ├─────────────────────────────────────────────────────────┤
-│  🧠 Processing Engine                                   │
+│   Processing Engine                                   │
 │  ├── SAR Image Preprocessor                             │
 │  ├── Deep Learning Models (PyTorch/TensorFlow)          │
 │  ├── Traditional CV Methods                             │
 │  └── Performance Evaluator                              │
 ├─────────────────────────────────────────────────────────┤
-│  💾 Data Layer                                          │
+│   Data Layer                                          │
 │  ├── Model Storage                                      │
 │  ├── Result Caching                                     │
 │  └── Processing History                                 │
 ├─────────────────────────────────────────────────────────┤
-│  🔧 Infrastructure                                      │
+│   Infrastructure                                      │
 │  ├── Docker Containers                                  │
 │  ├── Health Monitoring                                  │
 │  ├── Logging & Metrics                                  │
@@ -142,7 +142,7 @@ vercel --prod
 - **Monitoring**: Health checks, logging, metrics
 - **Deployment**: Railway, Render, Vercel, Docker
 
-## 📊 Available Models & Methods
+## Available Models & Methods
 
 ### Deep Learning Models
 
@@ -161,7 +161,7 @@ vercel --prod
 - **Morphological Operations**: Opening, closing, filtering
 - **Fuzzy Logic**: Edge detection with fuzzy rules
 
-## 🎯 API Usage Examples
+## API Usage Examples
 
 ### Single Image Detection
 
@@ -231,7 +231,7 @@ print(f"Dice: {metrics['dice_coefficient']:.3f}")
 print(f"Boundary F1: {metrics['boundary_f1']:.3f}")
 ```
 
-## 🔬 Evaluation Metrics
+## Evaluation Metrics
 
 The system provides comprehensive evaluation with 15+ metrics:
 
@@ -254,7 +254,7 @@ The system provides comprehensive evaluation with 15+ metrics:
 - **Shape Similarity**: Geometric consistency
 - **Contrast Enhancement Effectiveness**: Preprocessing quality
 
-## 🧪 Testing & Quality Assurance
+##Testing & Quality Assurance
 
 ```bash
 # Run all tests
@@ -278,7 +278,7 @@ mypy src/                             # Type checking
 - **Evaluation Metrics**: 96% coverage
 - **Overall Coverage**: 91%
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 sar-oil-spill-detection/
@@ -311,7 +311,7 @@ sar-oil-spill-detection/
 └── README.md           # This file
 ```
 
-## 📈 Performance Benchmarks
+## Performance Benchmarks
 
 ### Processing Speed
 | Image Size | Traditional Methods | Deep Learning | API Response |
@@ -328,7 +328,7 @@ sar-oil-spill-detection/
 | K-Means | 0.672 | 0.804 | 0.543 | 0.3s |
 | Adaptive Threshold | 0.619 | 0.765 | 0.498 | 0.2s |
 
-## 🚀 Deployment Options
+## Deployment Options
 
 ### 1. Railway (Recommended for Production)
 - **Pros**: Auto-scaling, managed infrastructure, good for APIs
@@ -350,7 +350,7 @@ sar-oil-spill-detection/
 - **Setup**: `docker-compose up`
 - **Use Cases**: On-premise, custom infrastructure
 
-## 🔮 Future Enhancements
+## Future Enhancements
 
 ### Planned Features
 - [ ] **Real-time Satellite Integration**: Direct satellite data feeds
@@ -365,7 +365,7 @@ sar-oil-spill-detection/
 - [ ] **Distributed Processing**: Multi-GPU and cluster support
 - [ ] **Advanced Metrics**: Physics-based evaluation metrics
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please see our [contributing guidelines](CONTRIBUTING.md).
 
@@ -394,18 +394,18 @@ flake8 src/
 git push origin feature/your-feature
 ```
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📧 Support & Contact
+## Support & Contact
 
 - **Author**: Aaron Sequeira
 - **Email**: aaronsequeira12@gmail.com
 - **GitHub**: [@aaronseq12](https://github.com/aaronseq12)
 - **Issues**: [GitHub Issues](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/issues)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Original MATLAB implementation and research
 - Open-source computer vision community
@@ -414,4 +414,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-⭐ **Star this repository if you find it useful!** ⭐
+ **Star this repository if you find it useful!**

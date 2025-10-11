@@ -4,7 +4,7 @@ This project provides a MATLAB-based environment for detecting and segmenting oi
 
 ![Evaluation Metrics](https://user-images.githubusercontent.com/96207365/185741928-d8a9379d-d6f7-490b-8694-4d1b32435daf.jpg)
 
-## 🚀 About The Project
+## About The Project
 
 - The project consists of designing and implementing image processing techniques for the **detection** and **segmentation** of oil spills on **SAR** images.
 - To verify the **correctness** and **precision** of these methods, the segmented images are compared to the **ground truth** masks from the dataset used in this [article](https://www.researchgate.net/publication/334715725_Oil_Spill_Identification_from_Satellite_Images_Using_Deep_Neural_Networks).
@@ -15,7 +15,7 @@ This project provides a MATLAB-based environment for detecting and segmenting oi
 
 ---
 
-## 🛰️ What is Synthetic Aperture Radar (SAR)?
+## What is Synthetic Aperture Radar (SAR)?
 
 Synthetic Aperture Radar (SAR) is a remote sensing technology used to create high-resolution images of the Earth's surface using radio waves. Unlike optical sensors, SAR is not dependent on sunlight and can operate day and night, as it actively emits microwave pulses and measures their reflections.
 
@@ -25,7 +25,7 @@ SAR's ability to operate regardless of weather (it can see through clouds) and l
 
 ---
 
-## 💻 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -55,7 +55,7 @@ SAR's ability to operate regardless of weather (it can see through clouds) and l
 
 ---
 
-## 🛠️ Segmentation Methods Implemented
+## Segmentation Methods Implemented
 
 The project explores two main scenarios based on the image type:
 
@@ -76,7 +76,7 @@ The project explores two main scenarios based on the image type:
 
 ---
 
-## 📊 Results and Evaluation
+## Results and Evaluation
 
 Every segmentation is evaluated both qualitatively and quantitatively:
 
@@ -93,10 +93,10 @@ The evaluation metrics are displayed with a visual comparison where:
 
 ---
 
-## 📄 Documentation
+## Documentation
 
 For a detailed technical explanation of the original implementation, please see the [Code explanation (technical implementation).pdf](https://github.com/aaronseq12/MatlabOilspilldetection/blob/main/Code%20explanation%20(technical%20implementation).pdf) file. *Note: Some code structures may have changed as part of the repository improvement process.*
 
-## 📧 Support
+## Support
 
 For any support, error corrections, etc., please email me at aaronsequeira12@gmail.com.

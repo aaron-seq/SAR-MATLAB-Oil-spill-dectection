@@ -1,0 +1,104 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PYRECORD
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing
+.coverage
+.pytest_cache/
+cover/
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+
+# Machine Learning
+models/saved_models/
+models/*.pth
+models/*.h5
+models/*.onnx
+models/*.pb
+checkpoints/
+runs/
+wandb/
+mlruns/
+
+# Data
+data/
+datasets/
+*.csv
+*.json
+*.pickle
+*.pkl
+*.npy
+*.npz
+
+# Results and outputs
+results/
+outputs/
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Deployment
+.vercel
+.railway

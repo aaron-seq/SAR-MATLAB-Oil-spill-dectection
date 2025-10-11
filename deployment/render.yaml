@@ -1,0 +1,57 @@
+# Render deployment configuration
+# For deploying to Render.com
+
+services:
+  - type: web
+    name: sar-oil-spill-detection
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    plan: free  # Change to 'starter' or higher for production
+    
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        generateValue: true
+    
+    healthCheckPath: /health
+    
+    autoDeploy: true
+    
+    buildFilter:
+      paths:
+        - api/**
+        - src/**
+        - requirements.txt
+        - config/**
+    
+    # Disk storage for model files
+    disk:
+      name: model-storage
+      mountPath: /opt/render/project/src/models
+      sizeGB: 10
+
+  # Optional: Background worker for batch processing
+  - type: worker
+    name: sar-batch-processor
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m src.workers.batch_processor
+    plan: free
+    
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: ENVIRONMENT
+        value: production
+    
+    autoDeploy: true
+    
+    buildFilter:
+      paths:
+        - src/**
+        - requirements.txt
+        - config/**

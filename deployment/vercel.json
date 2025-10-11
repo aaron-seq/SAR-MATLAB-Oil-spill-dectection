@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "name": "sar-oil-spill-detection",
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.11"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/main.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "/var/task",
+    "ENVIRONMENT": "production"
+  },
+  "functions": {
+    "api/main.py": {
+      "maxDuration": 30
+    }
+  },
+  "regions": ["iad1"],
+  "public": true
+}

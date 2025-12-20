@@ -1,0 +1,17 @@
+# Development dependencies
+# Install with: pip install -r requirements-pytorch.txt -r requirements-dev.txt
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+httpx==0.25.2  # For FastAPI testing
+
+# Code quality
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Type stubs
+types-PyYAML==6.0.12

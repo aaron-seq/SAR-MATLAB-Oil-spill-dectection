@@ -1,13 +1,5 @@
-"""
-Modern machine learning models for SAR oil spill detection.
-"""
+"""SAR oil spill detection models."""
 
-from .deep_learning_segmentation import DeepLearningSegmentation, ImprovedUNet, SARDataset
-from .traditional_segmentation import TraditionalSegmentation
+from .deep_learning_segmentation import DeepLearningSegmentation
 
-__all__ = [
-    "DeepLearningSegmentation", 
-    "ImprovedUNet", 
-    "SARDataset",
-    "TraditionalSegmentation"
-]
+__all__ = ['DeepLearningSegmentation']

@@ -6,6 +6,7 @@ Provides REST API endpoints for image upload, processing, and results.
 import io
 import logging
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -18,9 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
 
-# Import our custom modules
-import sys
-sys.path.append('..')
+# Import custom modules using proper imports
 from src.core.sar_image_processor import SARImageProcessor
 from src.models.deep_learning_segmentation import DeepLearningSegmentation
 from src.utils.performance_evaluator import PerformanceEvaluator
@@ -47,8 +46,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create static directory if it doesn't exist
+static_dir = Path("static")
+static_dir.mkdir(exist_ok=True)
+
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Global components initialization
 sar_processor = SARImageProcessor(target_image_size=(512, 512))
@@ -115,7 +118,7 @@ async def health_check():
             status_code=200,
             content={
                 "status": "healthy",
-                "timestamp": str(pd.Timestamp.now()),
+                "timestamp": datetime.utcnow().isoformat(),
                 "system": system_status
             }
         )

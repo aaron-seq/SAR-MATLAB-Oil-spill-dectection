@@ -1,104 +1,52 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-PYRECORD
+build/
+dist/
+.eggs/
 
 # Virtual environments
+.venv/
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Testing
-.coverage
+# Testing and tooling caches
 .pytest_cache/
-cover/
-*.cover
-*.py,cover
-.hypothesis/
-.tox/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
-# Machine Learning
+# Project outputs
+results/
+logs/
 models/saved_models/
-models/*.pth
-models/*.h5
-models/*.onnx
-models/*.pb
-checkpoints/
-runs/
-wandb/
-mlruns/
+*.pth
+*.pt
+*.h5
+*.ckpt
 
-# Data
+# Datasets (never commit imagery)
 data/
 datasets/
-*.csv
-*.json
-*.pickle
-*.pkl
-*.npy
-*.npz
+*.tif
+*.tiff
 
-# Results and outputs
-results/
-outputs/
-logs/
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-*.cache
-
-# System files
+# Editors and OS
+.idea/
+.vscode/
+*.swp
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Docker
-.dockerignore
+# Jupyter
+.ipynb_checkpoints/
 
-# Deployment
-.vercel
-.railway
+# MATLAB
+*.asv
+*.mat
+slprj/

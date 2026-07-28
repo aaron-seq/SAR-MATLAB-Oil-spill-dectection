@@ -1,72 +1,74 @@
-# SAR Oil Spill Detection System Configuration
+# SAR Oil Spill Detection - system configuration
+#
+# Every key here maps onto a dataclass in `sar_oil_spill.config`. Unknown keys
+# are logged and ignored, so the file is safe to extend. Omitted keys fall back
+# to the defaults defined in that module.
 
-# Image Processing Settings
 image_processing:
   target_size: [512, 512]
   normalize: true
-  enhance_contrast: true
   despeckle: true
-  augmentation: true
+  despeckle_filter: lee        # lee | frost | kuan | bilateral | median
+  despeckle_window: 7
 
-# Deep Learning Model Settings
+  # Contrast enhancement is DISABLED for detection on purpose.
+  # CLAHE and histogram equalisation normalise local contrast, which removes
+  # the slick-versus-sea intensity gap the detector relies on. On the synthetic
+  # benchmark, enabling CLAHE drops mean IoU from 0.85 to 0.32.
+  # Use it for display (see DataVisualizer), not before thresholding.
+  enhance_contrast: false
+  enhancement_method: none     # none | clahe | histogram_equalization | gamma
+
+traditional_methods:
+  adaptive_threshold:
+    # Must be much wider than any plausible slick, otherwise the background
+    # estimate sinks with the slick and the contrast cancels out.
+    background_window: 251
+    offset: 0.0
+    min_blob_area: 100
+    median_filter_size: 3
+
+  kmeans:
+    n_clusters: 5
+    max_iter: 350
+    n_init: 5
+    random_state: 42
+    n_largest_blobs: 3
+    gaussian_sigma: 1.5
+
+  superpixel:
+    n_segments: 1200
+    compactness: 10.0
+    sigma: 1.0
+    max_centroid_distance: 450.0
+
+  fuzzy_edge:
+    lee_window: 5
+    sigma: 0.1
+    binarize_threshold: 0.7   # minimum uniformity for a pixel to count as smooth
+
 deep_learning:
+  architecture: unet
   batch_size: 8
   learning_rate: 0.001
   epochs: 100
   early_stopping_patience: 15
-  optimizer: 'adam'
-  loss_function: 'focal_loss'  # Better for imbalanced segmentation
-  
-  # Model-specific configurations
-  unet:
-    encoder_depth: 5
-    decoder_channels: [256, 128, 64, 32, 16]
-    dropout: 0.2
-    activation: 'relu'
-  
-  segformer:
-    model_name: 'nvidia/mit-b0'
-    num_classes: 3
-    fine_tune_layers: -2
-  
-  deeplabv3:
-    backbone: 'resnet50'
-    output_stride: 16
-    atrous_rates: [6, 12, 18]
+  base_channels: 32
+  num_classes: 1
+  dropout: 0.2
+  checkpoint_dir: models/saved_models
 
-# Traditional Method Settings
-traditional_methods:
-  adaptive_threshold:
-    block_size: 11
-    C: 2
-    max_iterations: 10
-  
-  kmeans:
-    n_clusters: 3
-    max_iter: 100
-    random_state: 42
-  
-  superpixel:
-    n_segments: 300
-    compactness: 10
-    sigma: 1
-
-# Evaluation Settings
 evaluation:
-  metrics: ['jaccard', 'dice', 'boundary_f1', 'pixel_accuracy', 'mean_iou']
-  visualization_enabled: true
+  metrics: [jaccard, dice, pixel_accuracy, precision, recall, boundary_f1]
+  boundary_tolerance: 2
   save_predictions: true
-  confusion_matrix: true
 
-# System Settings
 system:
   use_gpu: true
-  mixed_precision: true
-  log_level: 'INFO'
+  log_level: INFO
   random_seed: 42
-  
-# Paths
+
 paths:
-  model_save_dir: 'models/saved_models'
-  results_dir: 'results'
-  logs_dir: 'logs'
+  model_save_dir: models/saved_models
+  results_dir: results
+  logs_dir: logs

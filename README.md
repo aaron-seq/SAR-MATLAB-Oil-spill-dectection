@@ -1,417 +1,354 @@
-# Advanced SAR Oil Spill Detection System
+# SAR Oil Spill Detection
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
+[![CI](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](Dockerfile)
-[![API](https://img.shields.io/badge/API-FastAPI-green.svg)](api/main.py)
-[![Tests](https://img.shields.io/badge/tests-pytest-orange.svg)](tests/)
+[![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://docs.astral.sh/ruff/)
 
-A state-of-the-art system for detecting and segmenting oil spills in Synthetic Aperture Radar (SAR) satellite imagery using both traditional computer vision and modern deep learning techniques.
+Detect and segment oil spills in Synthetic Aperture Radar (SAR) satellite
+imagery. A Python port and substantial rework of an original MATLAB research
+project, which is still included under [`matlab/`](matlab/).
 
-## Features
+![Detection overview](docs/images/detection-overview.png)
 
-### Advanced Analysis Capabilities
-- **Multi-Model Architecture**: Support for U-Net, DeepLabV3+, FPN, and custom models
-- **Traditional Methods**: Optimized implementations of threshold-based, clustering, and morphological techniques
-- **Real-time Processing**: FastAPI-based REST API for production deployments
-- **Comprehensive Evaluation**: 15+ evaluation metrics including IoU, Dice, boundary F1, and SAR-specific measures
+## Why SAR
 
-### Modern Infrastructure
-- **Cloud-Ready**: Pre-configured for Railway, Render, Vercel, and Docker deployments
-- **Containerized**: Docker and Docker Compose support for easy scaling
-- **Production-Ready**: Health checks, logging, monitoring, and error handling
-- **Developer-Friendly**: Comprehensive test suite, documentation, and development tools
+Oil floating on water damps the short capillary waves that scatter radar energy
+back to the satellite. A slick therefore returns **less** energy than the sea
+around it and appears as a dark, unusually smooth patch. Radar supplies its own
+illumination and passes through cloud, so this works at night and in the storms
+that tend to accompany a spill — which is exactly when optical sensors fail.
 
-### Key Improvements Over Original
-- **10x Performance**: Optimized algorithms and modern Python libraries
-- **Scalable Architecture**: Microservices-ready with async processing
-- **Enhanced Accuracy**: Deep learning models with attention mechanisms
-- **Better Usability**: Web interface, API endpoints, and interactive notebooks
+Every method here is built on that one observation. They differ only in how
+they decide where "dark and smooth" begins.
 
-## About SAR Oil Spill Detection
+## Quick start
 
-Synthetic Aperture Radar (SAR) is crucial for marine oil spill monitoring because:
-
-- **All-Weather Operation**: Works through clouds, fog, and darkness
-- **Oil Signature**: Oil dampens surface waves, creating dark spots in SAR imagery
-- **Wide Coverage**: Satellite-based monitoring of vast ocean areas
-- **Rapid Response**: Automated detection for emergency response teams
-
-When oil spills occur, they reduce wave energy on the ocean surface, appearing as dark regions in SAR images due to decreased backscatter.
-
-## Quick Start
-
-### Option 1: Using Docker (Recommended)
+No dataset and no trained model required — a synthetic SAR generator ships with
+the package, so the pipeline runs on a clean clone:
 
 ```bash
-# Clone the repository
 git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
 cd SAR-MATLAB-Oil-spill-dectection
 
-# Build and run with Docker Compose
-docker-compose up --build
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e '.[api,dev]'
 
-# Access the API at http://localhost:8000
-# View documentation at http://localhost:8000/api/docs
+sar-oil-spill demo --method kmeans_clustering
 ```
 
-### Option 2: Local Development
+```
+==========================================================
+                     DETECTION RESULT
+==========================================================
+  Method               kmeans_clustering
+  Oil detected         yes
+  Affected area        22,664 px (8.65% of scene)
+  Confidence           0.648
+  Processing time      479 ms
+----------------------------------------------------------
+  IoU (Jaccard)        0.896
+  Dice                 0.945
+  Precision / Recall   1.000 / 0.896
+  Boundary F1          0.107
+  Pixel accuracy       0.990
+==========================================================
+```
+
+Other entry points:
 
 ```bash
-# Clone and setup
-git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
-cd SAR-MATLAB-Oil-spill-dectection
+sar-oil-spill detect scene.png --method adaptive_threshold --ground-truth mask.png
+sar-oil-spill benchmark --samples 20          # score every method
+sar-oil-spill dataset /path/to/dataset        # summarise a dataset on disk
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the API server
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn api.main:app --reload                 # REST API at :8000/api/docs
+streamlit run app.py                          # browser UI
+docker compose up --build                     # containerised API
 ```
 
-### Option 3: Cloud Deployment
+## Measured results
 
-#### Deploy to Railway
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
+Every number below comes from running the code, not from a paper. Reproduce
+them with `python scripts/generate_docs_images.py`, which regenerates this
+table, the JSON in [`docs/benchmark-results.json`](docs/benchmark-results.json)
+and every figure in this README.
 
-# Login and deploy
-railway login
-railway up
+**12 synthetic 512×512 scenes, seed 42, single CPU core:**
+
+| Method | IoU | Dice | Precision | Recall | Boundary F1 | Time |
+|---|---|---|---|---|---|---|
+| **K-means clustering** | **0.943** | **0.970** | 1.000 | 0.943 | 0.482 | 413 ms |
+| **Fuzzy edge detection** | 0.941 | 0.969 | 0.987 | 0.953 | 0.733 | 149 ms |
+| **Adaptive threshold** | 0.902 | 0.941 | 0.929 | **0.971** | **0.875** | **141 ms** |
+| **Superpixel clustering** | 0.859 | 0.924 | 0.982 | 0.875 | 0.287 | 265 ms |
+
+![Benchmark metrics](docs/images/benchmark-metrics.png)
+
+**Read this before quoting the numbers.** They are measured on *synthetic*
+scenes whose speckle, slick contrast and wind gradient follow the models in
+[`synthetic.py`](src/sar_oil_spill/data/synthetic.py). That makes them a fair
+comparison *between methods* and a solid regression test, but it does **not**
+predict accuracy on real Sentinel-1 imagery. Real scenes contain look-alikes —
+low-wind cells, biogenic films, rain cells, ship wakes — that are genuinely
+dark and genuinely smooth, and none of these methods can tell them from oil on
+radiometry alone. Expect materially lower scores on real data.
+
+Note the divergence between IoU and boundary F1: K-means wins on area overlap
+but scores 0.48 on contours, because clustering assigns whole pixels to the
+darkest class and produces a slightly dilated, blocky outline. Adaptive
+thresholding is the opposite — a little worse on area, clearly best on edges.
+Pick by what your downstream use actually needs.
+
+### The methods, side by side
+
+![Method comparison](docs/images/method-comparison.png)
+
+| Method | How it decides | Best for |
+|---|---|---|
+| **Adaptive threshold** | Divides by a wide-window background estimate, then Otsu on the ratio | Sharp boundaries; the fastest option |
+| **K-means clustering** | Clusters grey levels, takes the darkest cluster | Highest area accuracy; no false alarms |
+| **Superpixel clustering** | SLIC superpixels averaged, then Otsu, then distance filtering | Very conservative; heavy speckle |
+| **Fuzzy edge detection** | Gaussian fuzzy memberships on image gradients, keeps smooth *and* dark regions | Balanced; exploits texture, not just brightness |
+
+## How the pipeline works
+
+![Pipeline stages](docs/images/pipeline-stages.png)
+
+```
+raw SAR scene
+     │
+     ├─ despeckle          Lee / Frost / Kuan / median / bilateral
+     ├─ (enhance contrast) OFF by default — see below
+     ├─ resize             to the configured target size
+     │
+     ├─ segment            one of the four methods above
+     ├─ (mask land)        bright regions excluded on request
+     ├─ clean              morphological opening, hole filling, area filter
+     │
+     └─ evaluate           IoU, Dice, boundary F1, Hausdorff, object-level rates
 ```
 
-#### Deploy to Render
-1. Connect your GitHub repository to Render
-2. Use the `deployment/render.yaml` configuration
-3. Deploy with one click
+### Two findings worth knowing
 
-#### Deploy to Vercel
-```bash
-# Install Vercel CLI
-npm install -g vercel
+**1. Contrast enhancement destroys detection.** The previous version of this
+project applied CLAHE by default and advertised it as an improvement. It is
+actively harmful here, and measurably so:
 
-# Deploy
-vercel --prod
-```
+![Preprocessing effect](docs/images/preprocessing-effect.png)
 
-## Architecture
+CLAHE equalises contrast *within local tiles*. A slick wider than a tile gets
+its interior brightened to match the surrounding sea — the exact signal the
+detector depends on. Mean IoU across the benchmark falls from **0.85 to 0.32**.
+Enhancement is now off by default and belongs to visualisation, not detection.
+`tests/test_segmentation.py` guards the default so it cannot silently return.
 
-### System Components
+**2. A purely local threshold cannot see a large slick.** Thresholding each
+pixel against its immediate neighbourhood fails on any slick wider than the
+window: the local mean sinks with the slick and the contrast cancels, leaving
+only the rim detected (recall 0.009 in the original implementation). The fix is
+to estimate the background over a window *much wider* than any plausible slick
+and threshold the ratio — which under SAR's multiplicative noise model is the
+physically meaningful quantity anyway. Recall went from 0.009 to 0.971.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   SAR Oil Spill Detection System        │
-├─────────────────────────────────────────────────────────┤
-│   API Layer (FastAPI)                                │
-│  ├── REST Endpoints                                     │
-│  ├── Authentication & Rate Limiting                     │
-│  └── Request/Response Validation                        │
-├─────────────────────────────────────────────────────────┤
-│   Processing Engine                                   │
-│  ├── SAR Image Preprocessor                             │
-│  ├── Deep Learning Models (PyTorch/TensorFlow)          │
-│  ├── Traditional CV Methods                             │
-│  └── Performance Evaluator                              │
-├─────────────────────────────────────────────────────────┤
-│   Data Layer                                          │
-│  ├── Model Storage                                      │
-│  ├── Result Caching                                     │
-│  └── Processing History                                 │
-├─────────────────────────────────────────────────────────┤
-│   Infrastructure                                      │
-│  ├── Docker Containers                                  │
-│  ├── Health Monitoring                                  │
-│  ├── Logging & Metrics                                  │
-│  └── Auto-scaling                                       │
-└─────────────────────────────────────────────────────────┘
-```
+### Despeckling
 
-### Modern Tech Stack
+Speckle is multiplicative interference inherent to coherent radar, not additive
+sensor noise, so it needs SAR-specific adaptive filters:
 
-- **Backend**: FastAPI, Python 3.11+
-- **Deep Learning**: PyTorch, TensorFlow, segmentation-models-pytorch
-- **Computer Vision**: OpenCV, scikit-image, albumentations
-- **API Framework**: FastAPI with async support
-- **Containerization**: Docker, Docker Compose
-- **Testing**: pytest, pytest-cov
-- **Monitoring**: Health checks, logging, metrics
-- **Deployment**: Railway, Render, Vercel, Docker
+![Despeckling filters](docs/images/despeckling-filters.png)
 
-## Available Models & Methods
+Lee, Frost and Kuan all steer between "smooth towards the local mean" in
+homogeneous areas and "keep the pixel" at edges, using the local coefficient of
+variation to decide. All are vectorised over separable box filters, so cost is
+independent of window size. (The original implementation looped in Python over
+every pixel; on a 512×512 scene that is 262,144 iterations per image.)
 
-### Deep Learning Models
+### Land
 
-| Model | Architecture | Backbone | Parameters | Use Case |
-|-------|-------------|----------|------------|----------|
-| **ImprovedUNet** | U-Net + Attention | Custom | ~23M | High accuracy, interpretable |
-| **SMP-UNet** | U-Net | ResNet34 | ~24M | Balanced performance |
-| **DeepLabV3+** | Encoder-Decoder | ResNet50 | ~40M | Large-scale features |
-| **FPN** | Feature Pyramid | ResNet34 | ~22M | Multi-scale detection |
+Land is a rough, strong scatterer and reads bright, so it is separable from
+both sea and oil. `--mask-land` detects and excludes it:
 
-### Traditional Methods
+![Land masking](docs/images/land-masking.png)
 
-- **Adaptive Thresholding**: Local threshold computation
-- **K-Means Clustering**: Intensity-based pixel grouping  
-- **Superpixel Segmentation**: SLIC + classification
-- **Morphological Operations**: Opening, closing, filtering
-- **Fuzzy Logic**: Edge detection with fuzzy rules
-
-## API Usage Examples
-
-### Single Image Detection
+## Python API
 
 ```python
-import requests
-from pathlib import Path
+from sar_oil_spill import OilSpillDetector
+from sar_oil_spill.data import generate_sar_scene
 
-# Upload SAR image for detection
-with open('sar_image.png', 'rb') as f:
-    files = {'image_file': f}
-    data = {
-        'model_type': 'improved_unet',
-        'confidence_threshold': 0.7
-    }
-    
-    response = requests.post(
-        'http://localhost:8000/api/v1/detect',
-        files=files,
-        data=data
-    )
-    
-result = response.json()
-print(f"Oil spill detected: {result['results']['oil_spill_detected']}")
-print(f"Confidence: {result['results']['confidence_score']:.2f}")
-print(f"Affected area: {result['results']['affected_area']} pixels")
-```
+detector = OilSpillDetector()
+scene = generate_sar_scene(size=(512, 512), n_slicks=2, seed=42)
 
-### Batch Processing
-
-```python
-# Process multiple images
-image_files = [('images', open(f'image_{i}.png', 'rb')) for i in range(5)]
-
-response = requests.post(
-    'http://localhost:8000/api/v1/batch-process',
-    files=image_files,
-    data={'model_type': 'smp_deeplabv3plus'}
+result = detector.detect(
+    scene.image,
+    method="adaptive_threshold",
+    ground_truth=scene.oil_mask,   # optional; enables metrics
+    mask_land=False,
 )
 
-batch_id = response.json()['batch_id']
+print(result.oil_detected)              # True
+print(result.affected_area_pixels)      # 24451
+print(result.metrics.jaccard_index)     # 0.965
+print(result.summary())                 # JSON-safe dict
 
-# Check processing status
-status_response = requests.get(
-    f'http://localhost:8000/api/v1/batch-status/{batch_id}'
-)
-print(status_response.json())
+# Compare every method on the same scene
+for name, r in detector.compare_methods(scene.image, scene.oil_mask).items():
+    print(f"{name:24} IoU {r.metrics.jaccard_index:.3f}")
 ```
 
-### Performance Evaluation
+Working with your own data:
 
 ```python
-# Evaluate model against ground truth
-with open('sar_image.png', 'rb') as img, open('ground_truth.png', 'rb') as gt:
-    files = {
-        'image_file': img,
-        'ground_truth_file': gt
-    }
-    
-    response = requests.post(
-        'http://localhost:8000/api/v1/evaluate',
-        files=files
-    )
-    
-metrics = response.json()['evaluation_metrics']
-print(f"IoU: {metrics['jaccard_index']:.3f}")
-print(f"Dice: {metrics['dice_coefficient']:.3f}")
-print(f"Boundary F1: {metrics['boundary_f1']:.3f}")
+import cv2
+from sar_oil_spill import OilSpillDetector
+from sar_oil_spill.data import SARDatasetHandler
+
+result = OilSpillDetector().detect_from_file("scene.tif", method="kmeans_clustering")
+cv2.imwrite("mask.png", result.mask.astype("uint8") * 255)
+
+handler = SARDatasetHandler()
+if handler.load_dataset("/path/to/dataset"):
+    print(handler.get_dataset_statistics())
+    for name, image, truth in handler.iter_samples(limit=10):
+        ...
 ```
 
-## Evaluation Metrics
+Expected dataset layout (`images/` may be JPG while `labels/` is PNG — files
+are matched on stem, not full filename):
 
-The system provides comprehensive evaluation with 15+ metrics:
+```
+dataset_root/train/
+├── images/            labels/
+└── images_with_land/  labels_with_land/
+```
 
-### Core Segmentation Metrics
-- **Jaccard Index (IoU)**: Intersection over Union
-- **Dice Coefficient**: Harmonic mean of precision/recall
-- **Pixel Accuracy**: Correctly classified pixels
-- **Precision/Recall/F1**: Standard classification metrics
-
-### Boundary-Based Metrics
-- **Boundary F1**: Edge detection accuracy
-- **Hausdorff Distance**: Maximum boundary error
-
-### Object-Level Metrics
-- **Object Detection Rate**: Successfully detected oil spills
-- **False Positive Rate**: Incorrectly identified regions
-
-### SAR-Specific Metrics
-- **Area Estimation Error**: Oil spill size accuracy
-- **Shape Similarity**: Geometric consistency
-- **Contrast Enhancement Effectiveness**: Preprocessing quality
-
-##Testing & Quality Assurance
+## REST API
 
 ```bash
-# Run all tests
-pytest tests/ -v --cov=src
-
-# Run specific test categories
-pytest tests/test_sar_processor.py -v  # Image processing tests
-pytest tests/test_models.py -v        # Model tests
-pytest tests/test_api.py -v           # API tests
-
-# Code quality checks
-black src/                             # Code formatting
-flake8 src/                           # Linting
-mypy src/                             # Type checking
+uvicorn api.main:app --reload      # docs at http://localhost:8000/api/docs
 ```
 
-### Test Coverage
-- **Image Processing**: 95% coverage
-- **Deep Learning Models**: 88% coverage  
-- **API Endpoints**: 92% coverage
-- **Evaluation Metrics**: 96% coverage
-- **Overall Coverage**: 91%
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/api/v1/methods` | List available methods |
+| `POST` | `/api/v1/detect` | Detect in one image |
+| `POST` | `/api/v1/evaluate` | Detect and score against a reference mask |
+| `POST` | `/api/v1/batch-process` | Queue up to 10 images |
+| `GET` | `/api/v1/batch-status/{id}` | Poll batch progress |
 
-## Project Structure
+```python
+import base64, requests
 
-```
-sar-oil-spill-detection/
-├── api/                    # FastAPI application
-│   ├── main.py            # API endpoints and configuration
-│   └── __init__.py
-├── src/                   # Core source code
-│   ├── core/              # Core processing modules
-│   │   ├── sar_image_processor.py
-│   │   └── oil_spill_detector.py
-│   ├── models/            # ML models
-│   │   ├── deep_learning_segmentation.py
-│   │   └── traditional_segmentation.py
-│   └── utils/             # Utilities
-│       ├── performance_evaluator.py
-│       └── data_visualizer.py
-├── tests/                 # Test suite
-│   ├── test_sar_processor.py
-│   ├── test_models.py
-│   └── test_api.py
-├── deployment/           # Deployment configurations
-│   ├── railway.yml
-│   ├── render.yaml
-│   └── vercel.json
-├── config/               # Configuration files
-│   └── model_config.yaml
-├── docker-compose.yml    # Docker composition
-├── Dockerfile           # Container definition
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+with open("scene.png", "rb") as handle:
+    response = requests.post(
+        "http://localhost:8000/api/v1/detect",
+        files={"image_file": handle},
+        data={"method": "adaptive_threshold", "mask_land": "false"},
+    )
+
+results = response.json()["results"]
+print(results["oil_spill_detected"], results["coverage_percent"])
+
+with open("mask.png", "wb") as handle:
+    handle.write(base64.b64decode(results["detection_mask_png_base64"]))
 ```
 
-## Performance Benchmarks
+Detection runs on a worker thread (`asyncio.to_thread`) so a large scene cannot
+block the event loop. Uploads are capped at 25 MB and restricted by extension.
+See [`deployment/README.md`](deployment/README.md) for the two things to change
+before exposing this publicly.
 
-### Processing Speed
-| Image Size | Traditional Methods | Deep Learning | API Response |
-|------------|--------------------|--------------|--------------|
-| 512×512    | ~0.3s              | ~1.2s        | ~1.5s        |
-| 1024×1024  | ~1.1s              | ~2.8s        | ~3.2s        |
-| 2048×2048  | ~4.2s              | ~8.1s        | ~8.8s        |
+## Deep learning (optional)
 
-### Accuracy Comparison
-| Method | IoU | Dice | Boundary F1 | Processing Time |
-|--------|-----|------|-------------|----------------|
-| **ImprovedUNet** | **0.847** | **0.916** | **0.823** | 1.2s |
-| SMP-DeepLabV3+ | 0.831 | 0.908 | 0.801 | 2.1s |
-| K-Means | 0.672 | 0.804 | 0.543 | 0.3s |
-| Adaptive Threshold | 0.619 | 0.765 | 0.498 | 0.2s |
+An attention-gated U-Net is included but ships **without trained weights** —
+there is no pretrained checkpoint in this repository, and the traditional
+methods above are what the benchmark measures. PyTorch is an optional extra:
 
-## Deployment Options
+```bash
+pip install -e '.[dl]'
+```
 
-### 1. Railway (Recommended for Production)
-- **Pros**: Auto-scaling, managed infrastructure, good for APIs
-- **Setup**: Connect GitHub repo, automatic deployments
-- **Cost**: Free tier available, pay-as-you-scale
+```python
+from sar_oil_spill.models import DeepLearningSegmentation
 
-### 2. Render
-- **Pros**: Easy setup, good documentation, free SSL
-- **Setup**: Import from GitHub, uses `render.yaml`
-- **Cost**: Free tier with limitations
+model = DeepLearningSegmentation(architecture="unet", base_channels=32)
+model.create_model()
+model.load_checkpoint("models/unet_best.pt")   # you must train this yourself
+probabilities = model.predict(image)
+```
 
-### 3. Vercel
-- **Pros**: Fast deployment, edge functions, great for APIs
-- **Setup**: Connect repo, uses `vercel.json`
-- **Limitations**: Serverless functions, execution time limits
+Without the extra installed, importing it raises an `ImportError` naming the
+extra; everything else keeps working.
 
-### 4. Docker (Self-Hosted)
-- **Pros**: Full control, can run anywhere
-- **Setup**: `docker-compose up`
-- **Use Cases**: On-premise, custom infrastructure
+## Project layout
 
-## Future Enhancements
+```
+src/sar_oil_spill/         # the installable package
+├── config.py              # typed settings loaded from YAML
+├── cli.py                 # `sar-oil-spill` entry point
+├── core/                  # SAR preprocessing + detection pipeline
+├── models/                # traditional methods + optional U-Net
+├── data/                  # dataset loader + synthetic scene generator
+└── utils/                 # metrics + figure generation
+api/                       # FastAPI service
+matlab/                    # the original MATLAB implementation
+tests/                     # 165 tests
+scripts/                   # regenerate documentation figures
+docs/                      # figures, MATLAB guide, SAR background
+config/model_config.yaml   # runtime configuration
+```
 
-### Planned Features
-- [ ] **Real-time Satellite Integration**: Direct satellite data feeds
-- [ ] **Multi-temporal Analysis**: Change detection over time
-- [ ] **Mobile App**: React Native app for field operations
-- [ ] **3D Visualization**: Volume estimation and 3D mapping
-- [ ] **Alert System**: Automated notifications for new spills
+## Development
 
-### Technical Improvements
-- [ ] **Model Ensemble**: Combine multiple models for better accuracy
-- [ ] **Edge Deployment**: TensorRT/ONNX optimization
-- [ ] **Distributed Processing**: Multi-GPU and cluster support
-- [ ] **Advanced Metrics**: Physics-based evaluation metrics
+```bash
+pip install -e '.[api,dev]'
+
+pytest                                  # 165 tests
+pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
+ruff check .
+mypy src/sar_oil_spill
+```
+
+Coverage is **84%** overall as of the last run. The largest gap is
+`deep_learning_segmentation.py` at 11%, because PyTorch is not installed in CI;
+everything else sits between 79% and 100%.
+
+CI runs the suite on Python 3.10 through 3.13.
+
+## MATLAB original
+
+The original implementation is preserved verbatim in [`matlab/`](matlab/) and
+documented in [`docs/MATLAB.md`](docs/MATLAB.md), including a function-by-function
+map to the Python port. Background on SAR oil spill sensing is in
+[`docs/sar-background.md`](docs/sar-background.md).
+
+## Limitations
+
+- **Synthetic benchmarks only.** No real SAR imagery is bundled, so no accuracy
+  claim here transfers to Sentinel-1 or RADARSAT data.
+- **Look-alikes are not handled.** Low-wind areas, biogenic films, rain cells
+  and wave shadows are dark and smooth too. Distinguishing them needs
+  polarimetric features, wind-field data, or a trained classifier — none of
+  which are implemented.
+- **No georeferencing.** Input is treated as a plain raster; there is no
+  GeoTIFF/projection handling, so areas are reported in pixels, not m².
+- **No trained model.** The U-Net is architecture only.
+- **Batch state is in-process.** Not safe across multiple API replicas.
 
 ## Contributing
 
-Contributions are welcome! Please see our [contributing guidelines](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests should keep `pytest` and
+`ruff check .` green, and regenerate the documentation figures if they change
+any algorithm.
 
-### Development Setup
+## License
 
-```bash
-# Fork the repository and clone
-git clone https://github.com/your-username/SAR-MATLAB-Oil-spill-dectection.git
-cd SAR-MATLAB-Oil-spill-dectection
+MIT — see [LICENSE](LICENSE).
 
-# Create development branch
-git checkout -b feature/your-feature
+## Credits
 
-# Set up development environment
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-
-# Run tests before submitting
-pytest tests/ -v
-black src/
-flake8 src/
-
-# Submit pull request
-git push origin feature/your-feature
-```
-
-##  License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support & Contact
-
-- **Author**: Aaron Sequeira
-- **Email**: aaronsequeira12@gmail.com
-- **GitHub**: [@aaronseq12](https://github.com/aaronseq12)
-- **Issues**: [GitHub Issues](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/issues)
-
-## Acknowledgments
-
-- Original MATLAB implementation and research
-- Open-source computer vision community
-- SAR remote sensing research community
-- Contributors and testers
-
----
-
- **Star this repository if you find it useful!**
+- Original MATLAB implementation and research: Aaron Sequeira
+- Lee filter reference: Grzegorz Mianowski, MATLAB Central File Exchange
+- Fuzzy edge detection: adapted from the MathWorks Fuzzy Logic Toolbox tutorial

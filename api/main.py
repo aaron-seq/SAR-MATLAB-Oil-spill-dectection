@@ -1,537 +1,441 @@
-"""
-Modern FastAPI Application for SAR Oil Spill Detection
-Provides REST API endpoints for image upload, processing, and results.
+"""FastAPI service for SAR oil spill detection.
+
+Endpoints are versioned under ``/api/v1``. Interactive docs live at
+``/api/docs``. The service is stateless apart from an in-process batch job
+registry, so it scales horizontally behind any load balancer -- with the
+caveat noted on :data:`_batch_jobs`.
 """
 
-import io
+from __future__ import annotations
+
+import asyncio
+import base64
 import logging
-import tempfile
+import time
+import uuid
+from collections import OrderedDict
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Annotated, Any
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile, BackgroundTasks
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from PIL import Image
 
-# Import our custom modules
-import sys
-sys.path.append('..')
-from src.core.sar_image_processor import SARImageProcessor
-from src.models.deep_learning_segmentation import DeepLearningSegmentation
-from src.utils.performance_evaluator import PerformanceEvaluator
+from sar_oil_spill import __version__
+from sar_oil_spill.config import configure_logging, load_settings
+from sar_oil_spill.core import OilSpillDetector
+from sar_oil_spill.models.traditional_segmentation import METHOD_NAMES
+from sar_oil_spill.utils import PerformanceEvaluator
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="SAR Oil Spill Detection API",
-    description="Advanced API for detecting oil spills in SAR satellite imagery",
-    version="2.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_BATCH_SIZE = 10
+MAX_TRACKED_JOBS = 100
+VALID_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
+
+# Batch jobs live in memory, so a job is only visible to the worker that
+# created it and is lost on restart. That is deliberate for a single-node
+# deployment; put Redis behind this before running multiple replicas.
+_batch_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+# asyncio only holds weak references to running tasks, so a batch task that is
+# not referenced anywhere can be garbage-collected mid-flight.
+_background_tasks: set[asyncio.Task[None]] = set()
+
+_detector: OilSpillDetector | None = None
+_evaluator = PerformanceEvaluator()
+
+
+DetectionMethod = Enum(  # type: ignore[misc]
+    "DetectionMethod", {name.upper(): name for name in METHOD_NAMES}, type=str
 )
 
-# Configure CORS
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Build the detector once at startup rather than per request.
+
+    Constructing it involves reading config and allocating the processing
+    stack, which is wasteful to repeat on every call.
+    """
+    global _detector
+    configure_logging()
+    settings = load_settings()
+    _detector = OilSpillDetector(settings)
+    logger.info("Detector ready with methods: %s", ", ".join(METHOD_NAMES))
+    yield
+    _detector = None
+    _batch_jobs.clear()
+    _background_tasks.clear()
+    logger.info("Shutdown complete.")
+
+
+app = FastAPI(
+    title="SAR Oil Spill Detection API",
+    description=__doc__,
+    version=__version__,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    lifespan=lifespan,
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
-    allow_methods=["*"],
+    # Tighten this to your front-end origins before exposing the service.
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Global components initialization
-sar_processor = SARImageProcessor(target_image_size=(512, 512))
-evaluator = PerformanceEvaluator()
-model_instance = None  # Will be loaded on demand
+def get_detector() -> OilSpillDetector:
+    """Dependency returning the process-wide detector."""
+    if _detector is None:  # pragma: no cover - only if lifespan did not run
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Detector is not initialised.",
+        )
+    return _detector
 
-# Processing status tracking
-processing_jobs = {}
+
+DetectorDep = Annotated[OilSpillDetector, Depends(get_detector)]
 
 
-class DetectionRequest(BaseModel):
-    """Request model for oil spill detection."""
-    model_type: str = Field(default="improved_unet", description="Type of model to use")
-    enhancement_method: str = Field(default="clahe", description="Contrast enhancement method")
-    despeckling_filter: str = Field(default="lee", description="Despeckling filter type")
-    confidence_threshold: float = Field(default=0.5, description="Confidence threshold for detection")
+# ------------------------------------------------------------------ schemas
+
+
+class DetectionParameters(BaseModel):
+    """Tunable parameters accepted by the detection endpoints."""
+
+    method: str = Field(default="adaptive_threshold", description="Segmentation method.")
+    mask_land: bool = Field(default=False, description="Exclude bright land areas.")
+    min_area_pixels: int = Field(default=100, ge=0, description="Drop smaller detections.")
+
+
+class DetectionResults(BaseModel):
+    oil_spill_detected: bool
+    confidence_score: float
+    affected_area_pixels: int
+    coverage_percent: float
+    detection_mask_png_base64: str
+    image_dimensions: list[int]
+    method: str
 
 
 class DetectionResponse(BaseModel):
-    """Response model for detection results."""
     success: bool
     message: str
-    results: Optional[Dict] = None
-    processing_time: Optional[float] = None
-    job_id: Optional[str] = None
+    job_id: str
+    processing_time_seconds: float | None = None
+    results: DetectionResults | None = None
 
 
-class ModelInfo(BaseModel):
-    """Model information response."""
-    available_models: List[str]
-    current_model: Optional[str]
-    model_parameters: Optional[Dict] = None
+class EvaluationResponse(BaseModel):
+    success: bool
+    evaluation_metrics: dict[str, float]
+    detailed_report: dict[str, Any]
+    detection: DetectionResults
 
 
-@app.get("/", response_class=JSONResponse)
-async def root():
-    """API root endpoint with basic information."""
+class MethodInfo(BaseModel):
+    available_methods: list[str]
+    default_method: str
+    deep_learning_available: bool
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    timestamp: str
+    detector_ready: bool
+    active_batch_jobs: int
+
+
+class BatchStatus(BaseModel):
+    batch_id: str
+    status: str
+    total_images: int
+    completed: int
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = None
+
+
+# ---------------------------------------------------------------- endpoints
+
+
+@app.get("/", tags=["meta"])
+async def root() -> dict[str, Any]:
+    """Service metadata and endpoint index."""
     return {
-        "message": "SAR Oil Spill Detection API",
-        "version": "2.0.0",
-        "status": "active",
+        "service": "SAR Oil Spill Detection API",
+        "version": __version__,
+        "docs": "/api/docs",
         "endpoints": {
-            "docs": "/api/docs",
             "health": "/health",
+            "methods": "/api/v1/methods",
             "detect": "/api/v1/detect",
-            "models": "/api/v1/models"
-        }
+            "evaluate": "/api/v1/evaluate",
+            "batch": "/api/v1/batch-process",
+        },
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for deployment monitoring."""
-    try:
-        # Perform basic system checks
-        system_status = {
-            "api_status": "healthy",
-            "processor_ready": sar_processor is not None,
-            "evaluator_ready": evaluator is not None,
-            "active_jobs": len(processing_jobs)
-        }
-        
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "healthy",
-                "timestamp": str(pd.Timestamp.now()),
-                "system": system_status
-            }
-        )
-    except Exception as error:
-        logger.error(f"Health check failed: {error}")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "unhealthy",
-                "error": str(error)
-            }
-        )
+@app.get("/health", response_model=HealthResponse, tags=["meta"])
+async def health_check() -> HealthResponse:
+    """Liveness probe used by Docker, Railway and Render health checks."""
+    return HealthResponse(
+        status="healthy" if _detector is not None else "starting",
+        version=__version__,
+        timestamp=datetime.now(UTC).isoformat(),
+        detector_ready=_detector is not None,
+        active_batch_jobs=sum(1 for j in _batch_jobs.values() if j["status"] == "processing"),
+    )
 
 
-@app.get("/api/v1/models", response_model=ModelInfo)
-async def get_available_models():
-    """Get information about available models."""
-    try:
-        available_models = [
-            "improved_unet",
-            "smp_unet", 
-            "smp_deeplabv3plus",
-            "smp_fpn"
-        ]
-        
-        current_model = None
-        model_params = None
-        
-        if model_instance is not None:
-            current_model = "loaded_model"
-            model_params = {
-                "device": str(model_instance.device),
-                "input_channels": 1,
-                "num_classes": 2
-            }
-        
-        return ModelInfo(
-            available_models=available_models,
-            current_model=current_model,
-            model_parameters=model_params
-        )
-    
-    except Exception as error:
-        logger.error(f"Error getting model info: {error}")
-        raise HTTPException(status_code=500, detail=str(error))
+@app.get("/api/v1/methods", response_model=MethodInfo, tags=["detection"])
+async def get_available_methods() -> MethodInfo:
+    """List the segmentation methods this build supports."""
+    from sar_oil_spill.models.deep_learning_segmentation import TORCH_AVAILABLE
+
+    return MethodInfo(
+        available_methods=list(METHOD_NAMES),
+        default_method="adaptive_threshold",
+        deep_learning_available=TORCH_AVAILABLE,
+    )
 
 
-@app.post("/api/v1/detect", response_model=DetectionResponse)
+@app.post("/api/v1/detect", response_model=DetectionResponse, tags=["detection"])
 async def detect_oil_spill(
-    image_file: UploadFile = File(..., description="SAR image file"),
-    request_params: DetectionRequest = DetectionRequest()
-):
-    """Main endpoint for oil spill detection in SAR images."""
-    import time
-    import uuid
-    
-    start_time = time.time()
+    detector: DetectorDep,
+    image_file: Annotated[UploadFile, File(description="SAR image file.")],
+    method: Annotated[str, Form()] = "adaptive_threshold",
+    mask_land: Annotated[bool, Form()] = False,
+    min_area_pixels: Annotated[int, Form(ge=0)] = 100,
+) -> DetectionResponse:
+    """Detect oil slicks in a single uploaded SAR image."""
     job_id = str(uuid.uuid4())
-    
-    try:
-        # Validate file type
-        if not _is_valid_image_file(image_file.filename):
-            raise HTTPException(
-                status_code=400, 
-                detail="Invalid file format. Supported: JPG, PNG, TIFF"
-            )
-        
-        # Read and preprocess image
-        image_data = await image_file.read()
-        processed_image = await _preprocess_uploaded_image(
-            image_data, request_params
-        )
-        
-        # Load model if not already loaded
-        global model_instance
-        if model_instance is None:
-            model_instance = await _load_detection_model(request_params.model_type)
-        
-        # Perform detection
-        detection_result = await _perform_detection(
-            processed_image, model_instance, request_params
-        )
-        
-        # Calculate processing time
-        processing_time = time.time() - start_time
-        
-        # Prepare response
-        response_data = {
-            "oil_spill_detected": detection_result["oil_detected"],
-            "confidence_score": detection_result["confidence"],
-            "affected_area": detection_result["area_pixels"],
-            "detection_mask": detection_result["mask_base64"],
-            "processing_details": {
-                "model_used": request_params.model_type,
-                "enhancement_method": request_params.enhancement_method,
-                "despeckling_filter": request_params.despeckling_filter,
-                "image_size": detection_result["image_dimensions"]
-            }
-        }
-        
-        logger.info(f"Detection completed for job {job_id} in {processing_time:.2f}s")
-        
-        return DetectionResponse(
-            success=True,
-            message="Oil spill detection completed successfully",
-            results=response_data,
-            processing_time=processing_time,
-            job_id=job_id
-        )
-    
-    except HTTPException:
-        raise
-    except Exception as error:
-        logger.error(f"Detection failed for job {job_id}: {error}")
-        return DetectionResponse(
-            success=False,
-            message=f"Detection failed: {str(error)}",
-            job_id=job_id
-        )
+    started = time.perf_counter()
+
+    _validate_method(method)
+    image = await _decode_upload(image_file)
+
+    # The pipeline is CPU-bound NumPy work; off-thread it so one large scene
+    # cannot block the event loop for every other client.
+    result = await asyncio.to_thread(
+        detector.detect,
+        image,
+        method=method,
+        mask_land=mask_land,
+        min_area_pixels=min_area_pixels,
+    )
+
+    logger.info("Job %s: %s in %.0f ms", job_id, method, (time.perf_counter() - started) * 1000)
+    return DetectionResponse(
+        success=True,
+        message="Detection completed.",
+        job_id=job_id,
+        processing_time_seconds=round(time.perf_counter() - started, 4),
+        results=_to_results(result),
+    )
 
 
-@app.post("/api/v1/evaluate")
+@app.post("/api/v1/evaluate", response_model=EvaluationResponse, tags=["detection"])
 async def evaluate_detection(
-    image_file: UploadFile = File(..., description="SAR image file"),
-    ground_truth_file: UploadFile = File(..., description="Ground truth mask file"),
-    request_params: DetectionRequest = DetectionRequest()
-):
-    """Evaluate detection performance against ground truth."""
-    try:
-        # Read images
-        image_data = await image_file.read()
-        gt_data = await ground_truth_file.read()
-        
-        # Process images
-        processed_image = await _preprocess_uploaded_image(image_data, request_params)
-        ground_truth = _load_ground_truth_mask(gt_data)
-        
-        # Perform detection
-        global model_instance
-        if model_instance is None:
-            model_instance = await _load_detection_model(request_params.model_type)
-        
-        detection_result = await _perform_detection(
-            processed_image, model_instance, request_params
-        )
-        
-        # Evaluate performance
-        predicted_mask = _decode_mask_from_base64(detection_result["mask_base64"])
-        metrics = evaluator.calculate_segmentation_metrics(
-            predicted_mask, ground_truth
-        )
-        
-        evaluation_report = evaluator.generate_evaluation_report(metrics)
-        
-        return JSONResponse({
-            "success": True,
-            "evaluation_metrics": metrics,
-            "detailed_report": evaluation_report,
-            "detection_results": detection_result
-        })
-    
-    except Exception as error:
-        logger.error(f"Evaluation failed: {error}")
-        raise HTTPException(status_code=500, detail=str(error))
+    detector: DetectorDep,
+    image_file: Annotated[UploadFile, File(description="SAR image file.")],
+    ground_truth_file: Annotated[UploadFile, File(description="Reference mask.")],
+    method: Annotated[str, Form()] = "adaptive_threshold",
+    mask_land: Annotated[bool, Form()] = False,
+) -> EvaluationResponse:
+    """Detect, then score the prediction against an uploaded reference mask."""
+    _validate_method(method)
+    image = await _decode_upload(image_file)
+    ground_truth = await _decode_upload(ground_truth_file) > 127
+
+    result = await asyncio.to_thread(
+        detector.detect, image, method=method, ground_truth=ground_truth, mask_land=mask_land
+    )
+
+    if result.metrics is None:  # pragma: no cover - ground truth is always supplied here
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Metrics were not computed.")
+
+    metrics = result.metrics.as_dict()
+    return EvaluationResponse(
+        success=True,
+        evaluation_metrics=metrics,
+        detailed_report=_evaluator.generate_evaluation_report(
+            result.metrics, {"method": method, "shape": list(result.mask.shape)}
+        ),
+        detection=_to_results(result),
+    )
 
 
-@app.post("/api/v1/batch-process")
+@app.post("/api/v1/batch-process", response_model=BatchStatus, tags=["batch"])
 async def batch_process_images(
-    background_tasks: BackgroundTasks,
-    images: List[UploadFile] = File(...),
-    request_params: DetectionRequest = DetectionRequest()
-):
-    """Process multiple images in batch mode."""
-    import uuid
-    
+    detector: DetectorDep,
+    images: Annotated[list[UploadFile], File(description="Up to 10 SAR images.")],
+    method: Annotated[str, Form()] = "adaptive_threshold",
+    mask_land: Annotated[bool, Form()] = False,
+) -> BatchStatus:
+    """Queue several images for background processing.
+
+    Uploads are read to bytes *before* returning, because FastAPI closes the
+    temporary files once the response is sent -- a background task holding
+    ``UploadFile`` objects would find them already closed.
+    """
+    _validate_method(method)
+    if not images:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No images supplied.")
+    if len(images) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"At most {MAX_BATCH_SIZE} images per batch, got {len(images)}.",
+        )
+
+    payloads = [(f.filename or "unnamed", await _read_upload(f)) for f in images]
+
     batch_id = str(uuid.uuid4())
-    
-    try:
-        # Validate file count
-        if len(images) > 10:  # Limit batch size
-            raise HTTPException(
-                status_code=400,
-                detail="Maximum 10 images allowed per batch"
-            )
-        
-        # Start background processing
-        background_tasks.add_task(
-            _process_image_batch, batch_id, images, request_params
+    job: dict[str, Any] = {
+        "batch_id": batch_id,
+        "status": "processing",
+        "total_images": len(payloads),
+        "completed": 0,
+        "results": [],
+        "error": None,
+    }
+    _register_job(batch_id, job)
+
+    task = asyncio.create_task(_process_batch(detector, batch_id, payloads, method, mask_land))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return BatchStatus(**job)
+
+
+@app.get("/api/v1/batch-status/{batch_id}", response_model=BatchStatus, tags=["batch"])
+async def get_batch_status(batch_id: str) -> BatchStatus:
+    """Poll the progress of a queued batch."""
+    job = _batch_jobs.get(batch_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unknown batch id: {batch_id}")
+    return BatchStatus(**job)
+
+
+# ------------------------------------------------------------------ helpers
+
+
+def _validate_method(method: str) -> None:
+    """Reject unknown method names with a 400 that lists the valid ones."""
+    if method not in METHOD_NAMES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Unknown method '{method}'. Available: {', '.join(METHOD_NAMES)}.",
         )
-        
-        processing_jobs[batch_id] = {
-            "status": "processing",
-            "total_images": len(images),
-            "completed": 0,
-            "results": []
-        }
-        
-        return JSONResponse({
-            "success": True,
-            "message": "Batch processing started",
-            "batch_id": batch_id,
-            "status_endpoint": f"/api/v1/batch-status/{batch_id}"
-        })
-    
-    except HTTPException:
-        raise
-    except Exception as error:
-        logger.error(f"Batch processing failed: {error}")
-        raise HTTPException(status_code=500, detail=str(error))
 
 
-@app.get("/api/v1/batch-status/{batch_id}")
-async def get_batch_status(batch_id: str):
-    """Get status of batch processing job."""
-    if batch_id not in processing_jobs:
-        raise HTTPException(status_code=404, detail="Batch job not found")
-    
-    return JSONResponse(processing_jobs[batch_id])
-
-
-# Helper functions
-
-def _is_valid_image_file(filename: str) -> bool:
-    """Check if uploaded file is a valid image format."""
-    if not filename:
-        return False
-    
-    valid_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif'}
-    file_ext = Path(filename).suffix.lower()
-    return file_ext in valid_extensions
-
-
-async def _preprocess_uploaded_image(image_data: bytes, 
-                                   params: DetectionRequest) -> np.ndarray:
-    """Preprocess uploaded image data."""
-    try:
-        # Load image from bytes
-        image_array = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_GRAYSCALE)
-        
-        if image is None:
-            raise ValueError("Failed to decode image")
-        
-        # Apply preprocessing
-        image = image.astype(np.float32)
-        
-        # Apply despeckling filter
-        image = sar_processor.apply_despeckling_filter(
-            image, 
-            filter_type=params.despeckling_filter
+async def _read_upload(upload: UploadFile) -> bytes:
+    """Read an upload, enforcing the extension and size limits."""
+    suffix = Path(upload.filename or "").suffix.lower()
+    if suffix not in VALID_SUFFIXES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Unsupported file type '{suffix or 'unknown'}'. "
+            f"Allowed: {', '.join(sorted(VALID_SUFFIXES))}.",
         )
-        
-        # Apply contrast enhancement
-        image = sar_processor.enhance_contrast(
-            image, 
-            method=params.enhancement_method
+
+    data = await upload.read()
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Uploaded file is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
         )
-        
-        # Resize to target size
-        image = sar_processor.resize_image(image)
-        
-        # Normalize
-        image = sar_processor.normalize_intensity(image)
-        
-        return image
-        
-    except Exception as error:
-        logger.error(f"Image preprocessing failed: {error}")
-        raise
+    return data
 
 
-async def _load_detection_model(model_type: str):
-    """Load the specified detection model."""
+async def _decode_upload(upload: UploadFile) -> np.ndarray:
+    """Read and decode an upload into a single-channel array."""
+    return _decode_bytes(await _read_upload(upload))
+
+
+def _decode_bytes(data: bytes) -> np.ndarray:
+    """Decode image bytes to greyscale, raising a 400 if undecodable."""
+    decoded = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    if decoded is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Could not decode the file as an image."
+        )
+    return decoded
+
+
+def _to_results(result: Any) -> DetectionResults:
+    """Convert a ``DetectionResult`` into the API response schema."""
+    encoded = cv2.imencode(".png", result.mask.astype(np.uint8) * 255)[1]
+    return DetectionResults(
+        oil_spill_detected=result.oil_detected,
+        confidence_score=round(result.confidence, 4),
+        affected_area_pixels=result.affected_area_pixels,
+        coverage_percent=round(result.coverage_fraction * 100, 3),
+        detection_mask_png_base64=base64.b64encode(encoded.tobytes()).decode("ascii"),
+        image_dimensions=list(result.mask.shape),
+        method=result.method,
+    )
+
+
+def _register_job(batch_id: str, job: dict[str, Any]) -> None:
+    """Store a job, evicting the oldest so the registry cannot grow unbounded."""
+    _batch_jobs[batch_id] = job
+    while len(_batch_jobs) > MAX_TRACKED_JOBS:
+        _batch_jobs.popitem(last=False)
+
+
+async def _process_batch(
+    detector: OilSpillDetector,
+    batch_id: str,
+    payloads: list[tuple[str, bytes]],
+    method: str,
+    mask_land: bool,
+) -> None:
+    """Run detection over a batch, recording per-image success or failure."""
+    job = _batch_jobs[batch_id]
     try:
-        # Model configuration
-        config = {
-            'learning_rate': 0.001,
-            'model_save_dir': 'models',
-            'early_stopping_patience': 15
-        }
-        
-        model = DeepLearningSegmentation(config)
-        model.create_model(architecture=model_type)
-        
-        # Try to load pre-trained weights if available
-        model_path = Path('models') / f'{model_type}_best.pth'
-        if model_path.exists():
-            model.load_checkpoint(str(model_path))
-            logger.info(f"Loaded pre-trained {model_type} model")
-        else:
-            logger.warning(f"No pre-trained weights found for {model_type}")
-        
-        return model
-        
-    except Exception as error:
-        logger.error(f"Model loading failed: {error}")
-        raise
-
-
-async def _perform_detection(image: np.ndarray, model, 
-                           params: DetectionRequest) -> Dict:
-    """Perform oil spill detection on processed image."""
-    try:
-        # Make prediction
-        predicted_mask = model.predict(image)
-        
-        # Apply confidence threshold
-        confidence_mask = (predicted_mask >= params.confidence_threshold).astype(np.uint8)
-        
-        # Calculate metrics
-        oil_detected = np.sum(confidence_mask) > 0
-        confidence_score = float(np.max(predicted_mask)) if oil_detected else 0.0
-        affected_area = int(np.sum(confidence_mask))
-        
-        # Encode mask as base64
-        import base64
-        mask_bytes = cv2.imencode('.png', confidence_mask * 255)[1].tobytes()
-        mask_base64 = base64.b64encode(mask_bytes).decode('utf-8')
-        
-        return {
-            "oil_detected": oil_detected,
-            "confidence": confidence_score,
-            "area_pixels": affected_area,
-            "mask_base64": mask_base64,
-            "image_dimensions": image.shape
-        }
-        
-    except Exception as error:
-        logger.error(f"Detection failed: {error}")
-        raise
-
-
-def _load_ground_truth_mask(gt_data: bytes) -> np.ndarray:
-    """Load ground truth mask from uploaded data."""
-    try:
-        image_array = np.frombuffer(gt_data, np.uint8)
-        gt_mask = cv2.imdecode(image_array, cv2.IMREAD_GRAYSCALE)
-        
-        if gt_mask is None:
-            raise ValueError("Failed to decode ground truth mask")
-        
-        # Convert to binary mask (assuming oil spill pixels are white/bright)
-        binary_mask = (gt_mask > 128).astype(np.uint8)
-        
-        return binary_mask
-        
-    except Exception as error:
-        logger.error(f"Ground truth loading failed: {error}")
-        raise
-
-
-def _decode_mask_from_base64(mask_base64: str) -> np.ndarray:
-    """Decode base64 encoded mask."""
-    import base64
-    
-    mask_bytes = base64.b64decode(mask_base64)
-    mask_array = np.frombuffer(mask_bytes, np.uint8)
-    mask = cv2.imdecode(mask_array, cv2.IMREAD_GRAYSCALE)
-    
-    return (mask > 128).astype(np.uint8)
-
-
-async def _process_image_batch(batch_id: str, images: List[UploadFile], 
-                             params: DetectionRequest):
-    """Background task for batch image processing."""
-    try:
-        global model_instance
-        if model_instance is None:
-            model_instance = await _load_detection_model(params.model_type)
-        
-        results = []
-        
-        for idx, image_file in enumerate(images):
+        for index, (filename, data) in enumerate(payloads, start=1):
             try:
-                # Process individual image
-                image_data = await image_file.read()
-                processed_image = await _preprocess_uploaded_image(image_data, params)
-                detection_result = await _perform_detection(
-                    processed_image, model_instance, params
+                image = _decode_bytes(data)
+                result = await asyncio.to_thread(
+                    detector.detect, image, method=method, mask_land=mask_land
                 )
-                
-                results.append({
-                    "filename": image_file.filename,
-                    "success": True,
-                    "results": detection_result
-                })
-                
-                # Update progress
-                processing_jobs[batch_id]["completed"] = idx + 1
-                processing_jobs[batch_id]["results"] = results
-                
+                job["results"].append(
+                    {"filename": filename, "success": True, "results": result.summary()}
+                )
             except Exception as error:
-                logger.error(f"Failed to process {image_file.filename}: {error}")
-                results.append({
-                    "filename": image_file.filename,
-                    "success": False,
-                    "error": str(error)
-                })
-        
-        # Mark batch as completed
-        processing_jobs[batch_id]["status"] = "completed"
-        processing_jobs[batch_id]["results"] = results
-        
+                logger.error("Batch %s: %s failed: %s", batch_id, filename, error)
+                job["results"].append(
+                    {"filename": filename, "success": False, "error": str(error)}
+                )
+            job["completed"] = index
+        job["status"] = "completed"
     except Exception as error:
-        logger.error(f"Batch processing failed: {error}")
-        processing_jobs[batch_id]["status"] = "failed"
-        processing_jobs[batch_id]["error"] = str(error)
+        logger.exception("Batch %s failed", batch_id)
+        job["status"] = "failed"
+        job["error"] = str(error)
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(_request: Any, error: ValueError) -> JSONResponse:
+    """Surface bad arguments from the pipeline as 400s, not 500s."""
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(error)})
 
 
 if __name__ == "__main__":
     import uvicorn
-    
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("api.main:app", host="127.0.0.1", port=8000, reload=True)

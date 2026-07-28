@@ -1,36 +1,22 @@
-# Railway deployment configuration
-# For deploying to Railway.app
-
-name: sar-oil-spill-detection
+# Railway.app deployment (https://railway.app)
+#
+# Railway autodetects the Python project from pyproject.toml; this file pins
+# the build and start commands and wires up the health check.
 
 build:
-  buildCommand: pip install -r requirements.txt
+  buildCommand: pip install --upgrade pip && pip install '.[api]'
   watchPatterns:
-    - "**/*.py"
-    - "requirements.txt"
-    - "config/**/*"
+    - "src/**/*.py"
+    - "api/**/*.py"
+    - "config/**"
+    - "pyproject.toml"
 
-start:
+deploy:
   startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+  restartPolicyType: on_failure
+  restartPolicyMaxRetries: 3
+  healthcheckPath: /health
+  healthcheckTimeout: 30
 
 variables:
-  PYTHONPATH: /app
   ENVIRONMENT: production
-
-services:
-  web:
-    build:
-      buildCommand: pip install -r requirements.txt
-    deploy:
-      startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
-      restartPolicyType: always
-    variables:
-      NODE_ENV: production
-      PYTHONPATH: /app
-
-healthcheck:
-  path: /health
-  port: $PORT
-  interval: 30s
-  timeout: 10s
-  retries: 3

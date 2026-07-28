@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[api,dev]'
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
+
+  smoke:
+    # Verifies the package works with only its base dependencies -- no API
+    # extra, no PyTorch -- which is the configuration most library users get.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install base package only
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run the demo end to end
+        run: sar-oil-spill demo --size 256 --output-dir /tmp/results
+
+      - name: Confirm the deep-learning extra degrades gracefully
+        run: |
+          python - <<'PY'
+          from sar_oil_spill.models import deep_learning_segmentation as dl
+          assert not dl.TORCH_AVAILABLE, "torch should not be installed here"
+          try:
+              dl.DeepLearningSegmentation()
+          except ImportError as error:
+              assert "sar-oil-spill[dl]" in str(error), error
+          else:
+              raise AssertionError("expected an ImportError naming the extra")
+          print("optional dependency guard OK")
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build --target production -t sar-oil-spill:ci .
+      - name: Check the API answers its health probe
+        run: |
+          docker run -d --name api -p 8000:8000 sar-oil-spill:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then
+              echo "healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "service did not become healthy"; docker logs api; exit 1

@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sar-oil-spill"
+version = "3.0.0"
+description = "Oil spill detection and segmentation in Synthetic Aperture Radar imagery"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aaron Sequeira", email = "aaronsequeira12@gmail.com" }]
+keywords = ["sar", "remote-sensing", "oil-spill", "segmentation", "computer-vision"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "opencv-python-headless>=4.9",
+    "scikit-image>=0.22",
+    "scikit-learn>=1.4",
+    "matplotlib>=3.8",
+    "pillow>=10.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+    "gunicorn>=21.2; sys_platform != 'win32'",
+]
+app = ["streamlit>=1.32"]
+dl = ["torch>=2.2", "torchvision>=0.17"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.9",
+]
+
+[project.scripts]
+sar-oil-spill = "sar_oil_spill.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection"
+Issues = "https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sar_oil_spill"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "api"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["B008"]  # FastAPI dependency defaults in signatures
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:sar_oil_spill.*"]
+
+[tool.coverage.run]
+source = ["src/sar_oil_spill"]
+branch = true
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true

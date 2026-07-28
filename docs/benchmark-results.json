@@ -1,0 +1,92 @@
+{
+  "scenes": 12,
+  "scene_size": [
+    512,
+    512
+  ],
+  "seed": 42,
+  "metrics": {
+    "adaptive_threshold": {
+      "mean_jaccard_index": 0.9016559938787382,
+      "mean_dice_coefficient": 0.9407567749026207,
+      "mean_pixel_accuracy": 0.9782091776529948,
+      "mean_precision": 0.9290565280210924,
+      "mean_recall": 0.9709387086536104,
+      "mean_f1_score": 0.9407567749026207,
+      "mean_specificity": 0.978772812328232,
+      "mean_boundary_f1": 0.8747516292910934,
+      "mean_hausdorff_distance": 42.83559604357157,
+      "mean_true_positives": 34768.416666666664,
+      "mean_false_positives": 4705.083333333333,
+      "mean_false_negatives": 1007.25,
+      "mean_true_negatives": 221663.25,
+      "mean_predicted_area": 39473.5,
+      "mean_ground_truth_area": 35775.666666666664,
+      "mean_area_error_ratio": 0.09289870822956159,
+      "sample_count": 12.0
+    },
+    "kmeans_clustering": {
+      "mean_jaccard_index": 0.9428324721569963,
+      "mean_dice_coefficient": 0.9703717714936739,
+      "mean_pixel_accuracy": 0.9922266006469727,
+      "mean_precision": 0.9999286469690417,
+      "mean_recall": 0.9429006756720754,
+      "mean_f1_score": 0.9703717714936739,
+      "mean_specificity": 0.9999879747277897,
+      "mean_boundary_f1": 0.4815894908774558,
+      "mean_hausdorff_distance": 11.108029996560859,
+      "mean_true_positives": 33740.583333333336,
+      "mean_false_positives": 2.6666666666666665,
+      "mean_false_negatives": 2035.0833333333333,
+      "mean_true_negatives": 226365.66666666666,
+      "mean_predicted_area": 33743.25,
+      "mean_ground_truth_area": 35775.666666666664,
+      "mean_area_error_ratio": -0.0570295427218706,
+      "sample_count": 12.0
+    },
+    "superpixel_clustering": {
+      "mean_jaccard_index": 0.8588115649878167,
+      "mean_dice_coefficient": 0.9235757515608598,
+      "mean_pixel_accuracy": 0.9810333251953125,
+      "mean_precision": 0.9819446908051912,
+      "mean_recall": 0.8749058151453731,
+      "mean_f1_score": 0.9235757515608598,
+      "mean_specificity": 0.9966996850455531,
+      "mean_boundary_f1": 0.28741684044303817,
+      "mean_hausdorff_distance": 21.67443435488242,
+      "mean_true_positives": 31526.833333333332,
+      "mean_false_positives": 723.1666666666666,
+      "mean_false_negatives": 4248.833333333333,
+      "mean_true_negatives": 225645.16666666666,
+      "mean_predicted_area": 32250.0,
+      "mean_ground_truth_area": 35775.666666666664,
+      "mean_area_error_ratio": -0.10707045321245638,
+      "sample_count": 12.0
+    },
+    "fuzzy_edge_detection": {
+      "mean_jaccard_index": 0.9410394743762142,
+      "mean_dice_coefficient": 0.969269239387339,
+      "mean_pixel_accuracy": 0.9905055363972982,
+      "mean_precision": 0.9865497859154893,
+      "mean_recall": 0.9529922334763894,
+      "mean_f1_score": 0.969269239387339,
+      "mean_specificity": 0.9973717878188427,
+      "mean_boundary_f1": 0.7333526236967861,
+      "mean_hausdorff_distance": 106.75969493201272,
+      "mean_true_positives": 33845.916666666664,
+      "mean_false_positives": 559.1666666666666,
+      "mean_false_negatives": 1929.75,
+      "mean_true_negatives": 225809.16666666666,
+      "mean_predicted_area": 34405.083333333336,
+      "mean_ground_truth_area": 35775.666666666664,
+      "mean_area_error_ratio": -0.034031036077369584,
+      "sample_count": 12.0
+    }
+  },
+  "mean_runtime_seconds": {
+    "adaptive_threshold": 0.1411372414166685,
+    "kmeans_clustering": 0.41304498683333196,
+    "superpixel_clustering": 0.264860354000002,
+    "fuzzy_edge_detection": 0.14937443083333454
+  }
+}

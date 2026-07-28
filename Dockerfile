@@ -1,71 +1,96 @@
-# Multi-stage build for SAR Oil Spill Detection System
-FROM python:3.11-slim as base
+# syntax=docker/dockerfile:1
+#
+# Multi-stage build for the SAR oil spill detection API.
+#
+#   docker build --target production -t sar-oil-spill .
+#   docker build --target development -t sar-oil-spill:dev .
 
-# Set environment variables
+# ----------------------------------------------------------------- builder
+
+FROM python:3.12-slim AS builder
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    DEBIAN_FRONTEND=noninteractive
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgdal-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Build tools live only in this stage; the runtime image never sees them.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Dependencies resolve from the manifest alone, so this layer is cached until
+# pyproject.toml actually changes -- not on every source edit.
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install '.[api]'
 
-# Copy source code
-COPY . .
+# --------------------------------------------------------------------- base
 
-# Create necessary directories
-RUN mkdir -p models/saved_models results logs static
+FROM python:3.12-slim AS base
 
-# Set proper permissions
-RUN chmod -R 755 /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
 
-# Expose port
+WORKDIR /app
+
+# opencv-python-headless still needs libGL and glib at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+
+COPY src/ ./src/
+COPY api/ ./api/
+COPY config/ ./config/
+COPY app.py pyproject.toml README.md ./
+
+RUN mkdir -p results logs models/saved_models
+
+# Run unprivileged: the service only ever reads uploads and writes to results/.
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --------------------------------------------------------------- production
 
-# Production stage
-FROM base as production
+FROM base AS production
 
-# Add production-specific configurations
 ENV ENVIRONMENT=production
 
-# Use gunicorn for production
-CMD ["gunicorn", "api.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# Two workers: the pipeline is CPU-bound and already off-threads its heavy work,
+# so oversubscribing cores mostly adds memory pressure. Raise with -w on hosts
+# with more vCPUs.
+CMD ["gunicorn", "api.main:app", \
+     "--workers", "2", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "120", \
+     "--access-logfile", "-"]
 
-# Development stage
-FROM base as development
+# -------------------------------------------------------------- development
+
+FROM base AS development
 
 ENV ENVIRONMENT=development
 
-# Install development dependencies
-RUN pip install --no-cache-dir pytest pytest-cov black isort flake8
+USER root
+COPY tests/ ./tests/
+COPY scripts/ ./scripts/
+RUN pip install '.[api,dev]' && chown -R appuser:appuser /app
+USER appuser
 
-# Run with auto-reload for development
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

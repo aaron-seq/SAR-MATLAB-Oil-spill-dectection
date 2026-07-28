@@ -1,6 +1,6 @@
 # SAR Oil Spill Detection
 
-[![CI](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml)
+[![CI](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://docs.astral.sh/ruff/)
@@ -28,7 +28,7 @@ No dataset and no trained model required — a synthetic SAR generator ships wit
 the package, so the pipeline runs on a clean clone:
 
 ```bash
-git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
+git clone https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection.git
 cd SAR-MATLAB-Oil-spill-dectection
 
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -311,18 +311,35 @@ ruff check .
 mypy src/sar_oil_spill
 ```
 
-Coverage is **84%** overall as of the last run. The largest gap is
-`deep_learning_segmentation.py` at 11%, because PyTorch is not installed in CI;
-everything else sits between 79% and 100%.
+Coverage is **84%** overall as of the last run. Two modules pull that down and
+both are the untrained deep-learning path: `deep_learning_segmentation.py` at
+11% and the lazy-export shim in `models/__init__.py` at 45%, neither of which
+executes without PyTorch installed. Every other module sits between 80% and
+100%, with the core pipeline (`oil_spill_detector.py` 95%,
+`sar_image_processor.py` 93%, `performance_evaluator.py` 98%) at the top.
 
 CI runs the suite on Python 3.10 through 3.13.
 
-## MATLAB original
+## Documentation
 
-The original implementation is preserved verbatim in [`matlab/`](matlab/) and
-documented in [`docs/MATLAB.md`](docs/MATLAB.md), including a function-by-function
-map to the Python port. Background on SAR oil spill sensing is in
-[`docs/sar-background.md`](docs/sar-background.md).
+| Document | Covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the code is put together, and why each design choice was made |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every config key, with tuning guidance and measured parameter sweeps |
+| [docs/MATLAB.md](docs/MATLAB.md) | The original MATLAB code, mapped function by function to the port |
+| [docs/sar-background.md](docs/sar-background.md) | Why SAR suits oil spill monitoring |
+| [deployment/README.md](deployment/README.md) | Deployment targets, sizing, and what to change before going public |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and house rules |
+| [CHANGELOG.md](CHANGELOG.md) | What changed and why |
+
+The original MATLAB implementation is preserved verbatim in
+[`matlab/`](matlab/). [`docs/MATLAB.md`](docs/MATLAB.md) records the four places
+where the Python port deliberately behaves differently — two of which fix
+measurable bugs in the original.
+
+Working with an AI coding agent? [`CLAUDE.md`](CLAUDE.md) is a repository guide,
+and [`docs/dispatch-prompt.md`](docs/dispatch-prompt.md) is a ready-to-paste
+prompt with task blocks for the open work.
 
 ## Limitations
 

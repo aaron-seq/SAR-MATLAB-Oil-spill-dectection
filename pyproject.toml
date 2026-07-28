@@ -54,8 +54,8 @@ dev = [
 sar-oil-spill = "sar_oil_spill.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection"
-Issues = "https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/issues"
+Homepage = "https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection"
+Issues = "https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sar_oil_spill"]

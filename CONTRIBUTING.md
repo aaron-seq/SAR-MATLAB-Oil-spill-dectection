@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
+git clone https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection.git
 cd SAR-MATLAB-Oil-spill-dectection
 
 python -m venv .venv && source .venv/bin/activate

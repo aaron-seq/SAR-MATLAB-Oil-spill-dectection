@@ -218,6 +218,7 @@ else:  # pragma: no cover - placeholders so names exist for import guards
 
     def dice_loss(*args: object, **kwargs: object) -> object:  # type: ignore[misc]
         require_torch()
+        raise AssertionError("unreachable: require_torch() always raises here")
 
 
 class DeepLearningSegmentation:

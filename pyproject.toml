@@ -69,6 +69,13 @@ src = ["src", "tests", "api"]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
 ignore = ["B008"]  # FastAPI dependency defaults in signatures
 
+[tool.ruff.lint.isort]
+# Declared explicitly rather than left to ruff's heuristic first-party
+# detection, which resolved `sar_oil_spill` as first-party locally (editable
+# install present) but third-party on a clean CI checkout -- producing import
+# ordering that passed locally and failed in CI.
+known-first-party = ["sar_oil_spill", "api"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
 
@@ -85,3 +92,11 @@ branch = true
 python_version = "3.10"
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# The torch import guard needs `type: ignore` comments that are only "used"
+# when torch is actually installed. Whether they fire depends on the
+# environment, so warn_unused_ignores would flip this module's result
+# depending on whether the optional `dl` extra is present.
+module = "sar_oil_spill.models.deep_learning_segmentation"
+warn_unused_ignores = false

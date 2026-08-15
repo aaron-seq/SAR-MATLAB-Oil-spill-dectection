@@ -131,6 +131,16 @@ class SystemSettings:
     use_gpu: bool = True
 
 
+def as_size(value: tuple[int, ...] | list[int]) -> tuple[int, int]:
+    """Narrow a config sequence to a fixed ``(height, width)`` pair.
+
+    YAML gives a list and ``tuple()`` widens to ``tuple[int, ...]``, which loses
+    the arity that OpenCV and the processor both require.
+    """
+    height, width = value
+    return int(height), int(width)
+
+
 @dataclass(frozen=True)
 class Settings:
     """Root configuration object."""
@@ -147,7 +157,7 @@ class Settings:
     system: SystemSettings = field(default_factory=SystemSettings)
 
 
-def _build(cls: type, raw: dict[str, Any] | None) -> Any:
+def _build(cls: Any, raw: dict[str, Any] | None) -> Any:
     """Recursively instantiate ``cls`` from a plain mapping, ignoring extras.
 
     ``from __future__ import annotations`` turns field annotations into strings,

@@ -35,6 +35,9 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Type check
+        run: mypy src/sar_oil_spill
+
       - name: Test
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 
@@ -72,6 +75,25 @@ jobs:
               raise AssertionError("expected an ImportError naming the extra")
           print("optional dependency guard OK")
           PY
+
+  audit:
+    # Advisory rather than blocking: the vulnerability database changes daily,
+    # so a hard gate here fails builds for reasons unrelated to the commit.
+    # Read the output, don't ignore it.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -e '.[api]'
+          pip-audit --progress-spinner off
 
   docker:
     runs-on: ubuntu-latest

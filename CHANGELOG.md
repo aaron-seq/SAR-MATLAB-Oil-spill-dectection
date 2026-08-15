@@ -57,7 +57,7 @@ import and the test suite could not be collected.
 - `sar-oil-spill` CLI with `demo`, `detect`, `benchmark` and `dataset`.
 - Attention-gated U-Net behind an optional `dl` extra. No trained weights ship
   with the repository.
-- 165 tests (84% coverage), ruff, CI across Python 3.10–3.13 plus a job that
+- 171 tests (84% coverage), ruff, mypy, CI across Python 3.10–3.13 plus a job that
   verifies the package works with base dependencies only.
 - Non-root multi-stage Dockerfile; `LICENSE`; `CONTRIBUTING.md`; `CLAUDE.md`;
   architecture, configuration and MATLAB reference docs; eight generated figures.

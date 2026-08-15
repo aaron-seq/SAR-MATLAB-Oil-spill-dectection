@@ -8,9 +8,9 @@ import io
 import cv2
 import numpy as np
 import pytest
-from api.main import app
 from fastapi.testclient import TestClient
 
+from api.main import app
 from sar_oil_spill.data import generate_sar_scene
 
 

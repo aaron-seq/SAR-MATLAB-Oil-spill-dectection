@@ -19,10 +19,10 @@ is wrong no matter what the metrics say.
 ```bash
 pip install -e '.[api,dev]'          # set up
 
-pytest                               # 165 tests, ~9 s
+pytest                               # 171 tests, ~10 s
 pytest tests/test_segmentation.py -v # one file
 ruff check .                         # must be clean
-mypy src/sar_oil_spill               # advisory, not enforced in CI
+mypy src/sar_oil_spill               # must be clean; enforced in CI
 
 sar-oil-spill demo                   # end-to-end on a synthetic scene
 sar-oil-spill benchmark --samples 20 # score every method
@@ -108,8 +108,11 @@ guard. CI has a job that verifies this.
 **Tests are named for behaviour**, not for the function they call —
 `test_slicks_are_darker_than_the_sea`, not `test_generate_sar_scene`.
 
-**No datasets or checkpoints in git.** `.gitignore` covers `*.tif`, `*.pt`,
-`*.pth`, `data/`, `results/`.
+**No datasets or checkpoints in git**, but keep those `.gitignore` rules
+*root-anchored* (`/data/`, `/results/`). An unanchored `data/` also matches
+`src/sar_oil_spill/data/`, which silently excluded the synthetic generator
+from the repository — every local test passed while a fresh clone could not
+import it. `tests/test_packaging.py` now guards this.
 
 ## Adding a segmentation method
 
@@ -130,7 +133,7 @@ guard. CI has a job that verifies this.
 - No georeferencing; areas are reported in pixels, not m².
 - The U-Net has no trained weights.
 - API batch jobs are in-process, so they are not safe across replicas.
-- The Docker build has never run in this environment (no daemon available); CI
-  is the first real exercise of it.
+- No Docker daemon in the dev sandbox, so the image is only ever exercised by
+  the CI `docker` job (which does pass).
 
 `docs/dispatch-prompt.md` has ready-made task blocks for several of these.

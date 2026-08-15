@@ -17,7 +17,7 @@ pytest && ruff check .
 ```bash
 pytest                          # all tests must pass
 ruff check .                    # no lint errors
-mypy src/sar_oil_spill          # advisory, not enforced in CI
+mypy src/sar_oil_spill          # must be clean; enforced in CI
 ```
 
 If you changed anything that affects detection output, also run:

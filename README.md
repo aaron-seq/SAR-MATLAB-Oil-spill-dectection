@@ -294,7 +294,7 @@ src/sar_oil_spill/         # the installable package
 └── utils/                 # metrics + figure generation
 api/                       # FastAPI service
 matlab/                    # the original MATLAB implementation
-tests/                     # 165 tests
+tests/                     # 171 tests
 scripts/                   # regenerate documentation figures
 docs/                      # figures, MATLAB guide, SAR background
 config/model_config.yaml   # runtime configuration
@@ -305,10 +305,10 @@ config/model_config.yaml   # runtime configuration
 ```bash
 pip install -e '.[api,dev]'
 
-pytest                                  # 165 tests
+pytest                                  # 171 tests
 pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 ruff check .
-mypy src/sar_oil_spill
+mypy src/sar_oil_spill                  # must be clean; enforced in CI
 ```
 
 Coverage is **84%** overall as of the last run. Two modules pull that down and

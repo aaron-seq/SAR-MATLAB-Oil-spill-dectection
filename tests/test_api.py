@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from sar_oil_spill.data import generate_sar_scene
+from sar_oil_spill.models import METHOD_NAMES
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +58,14 @@ class TestMetaEndpoints:
     def test_openapi_schema_is_served(self, client):
         assert client.get("/openapi.json").status_code == 200
 
+    def test_openapi_advertises_methods_as_an_enum(self, client):
+        """Issue #7: the method parameter is a closed set in the schema, driven
+        by the same METHOD_NAMES registry as the CLI -- not a free string."""
+        schemas = client.get("/openapi.json").json()["components"]["schemas"]
+
+        enums = [schema["enum"] for schema in schemas.values() if "enum" in schema]
+        assert sorted(METHOD_NAMES) in [sorted(values) for values in enums]
+
 
 class TestDetectEndpoint:
     def test_detects_oil_in_a_synthetic_scene(self, client, sar_png):
@@ -94,13 +103,16 @@ class TestDetectEndpoint:
         assert response.status_code == 200
         assert response.json()["results"]["method"] == method
 
-    def test_unknown_method_is_rejected(self, client, sar_png):
+    def test_unknown_method_is_rejected_with_the_permitted_values(self, client, sar_png):
+        """Issue #7: invalid parameters fail validation at the boundary (422),
+        and the message tells the caller what *would* have been accepted."""
         response = client.post(
             "/api/v1/detect", files={"image_file": upload(sar_png)}, data={"method": "telepathy"}
         )
 
-        assert response.status_code == 400
-        assert "Unknown method" in response.json()["detail"]
+        assert response.status_code == 422
+        message = str(response.json()["detail"])
+        assert all(name in message for name in METHOD_NAMES)
 
     def test_unsupported_extension_is_rejected(self, client, sar_png):
         response = client.post(
@@ -143,6 +155,17 @@ class TestEvaluateEndpoint:
         response = client.post("/api/v1/evaluate", files={"image_file": upload(sar_png)})
         assert response.status_code == 422
 
+    def test_unknown_method_is_rejected(self, client, sar_png, truth_png):
+        response = client.post(
+            "/api/v1/evaluate",
+            files={
+                "image_file": upload(sar_png),
+                "ground_truth_file": upload(truth_png, "truth.png"),
+            },
+            data={"method": "telepathy"},
+        )
+        assert response.status_code == 422
+
 
 class TestBatchEndpoints:
     def test_batch_runs_to_completion(self, client, sar_png):
@@ -166,6 +189,16 @@ class TestBatchEndpoints:
 
         assert response.status_code == 400
         assert "At most 10" in response.json()["detail"]
+
+    def test_batch_rejects_unknown_method_before_queueing(self, client, sar_png):
+        """Validation must happen up front, not inside the background task
+        where the caller would only discover it by polling."""
+        response = client.post(
+            "/api/v1/batch-process",
+            files=[("images", upload(sar_png))],
+            data={"method": "telepathy"},
+        )
+        assert response.status_code == 422
 
     def test_unknown_batch_id_returns_404(self, client):
         assert client.get("/api/v1/batch-status/does-not-exist").status_code == 404

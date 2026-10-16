@@ -53,9 +53,16 @@ _detector: OilSpillDetector | None = None
 _evaluator = PerformanceEvaluator()
 
 
+# Built from METHOD_NAMES so the single registry still drives everything: a new
+# method shows up here, in validation and in the OpenAPI dropdown automatically.
 DetectionMethod = Enum(  # type: ignore[misc]
     "DetectionMethod", {name.upper(): name for name in METHOD_NAMES}, type=str
 )
+DEFAULT_METHOD = DetectionMethod("adaptive_threshold")
+MethodParam = Annotated[
+    DetectionMethod,
+    Form(description="Segmentation method. Invalid values are rejected with 422."),
+]
 
 
 @asynccontextmanager
@@ -110,14 +117,6 @@ DetectorDep = Annotated[OilSpillDetector, Depends(get_detector)]
 
 
 # ------------------------------------------------------------------ schemas
-
-
-class DetectionParameters(BaseModel):
-    """Tunable parameters accepted by the detection endpoints."""
-
-    method: str = Field(default="adaptive_threshold", description="Segmentation method.")
-    mask_land: bool = Field(default=False, description="Exclude bright land areas.")
-    min_area_pixels: int = Field(default=100, ge=0, description="Drop smaller detections.")
 
 
 class DetectionResults(BaseModel):
@@ -216,7 +215,7 @@ async def get_available_methods() -> MethodInfo:
 async def detect_oil_spill(
     detector: DetectorDep,
     image_file: Annotated[UploadFile, File(description="SAR image file.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
     min_area_pixels: Annotated[int, Form(ge=0)] = 100,
 ) -> DetectionResponse:
@@ -224,7 +223,6 @@ async def detect_oil_spill(
     job_id = str(uuid.uuid4())
     started = time.perf_counter()
 
-    _validate_method(method)
     image = await _decode_upload(image_file)
 
     # The pipeline is CPU-bound NumPy work; off-thread it so one large scene
@@ -232,12 +230,13 @@ async def detect_oil_spill(
     result = await asyncio.to_thread(
         detector.detect,
         image,
-        method=method,
+        method=method.value,
         mask_land=mask_land,
         min_area_pixels=min_area_pixels,
     )
 
-    logger.info("Job %s: %s in %.0f ms", job_id, method, (time.perf_counter() - started) * 1000)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info("Job %s: %s in %.0f ms", job_id, method.value, elapsed_ms)
     return DetectionResponse(
         success=True,
         message="Detection completed.",
@@ -252,16 +251,19 @@ async def evaluate_detection(
     detector: DetectorDep,
     image_file: Annotated[UploadFile, File(description="SAR image file.")],
     ground_truth_file: Annotated[UploadFile, File(description="Reference mask.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
 ) -> EvaluationResponse:
     """Detect, then score the prediction against an uploaded reference mask."""
-    _validate_method(method)
     image = await _decode_upload(image_file)
     ground_truth = await _decode_upload(ground_truth_file) > 127
 
     result = await asyncio.to_thread(
-        detector.detect, image, method=method, ground_truth=ground_truth, mask_land=mask_land
+        detector.detect,
+        image,
+        method=method.value,
+        ground_truth=ground_truth,
+        mask_land=mask_land,
     )
 
     if result.metrics is None:  # pragma: no cover - ground truth is always supplied here
@@ -272,7 +274,7 @@ async def evaluate_detection(
         success=True,
         evaluation_metrics=metrics,
         detailed_report=_evaluator.generate_evaluation_report(
-            result.metrics, {"method": method, "shape": list(result.mask.shape)}
+            result.metrics, {"method": method.value, "shape": list(result.mask.shape)}
         ),
         detection=_to_results(result),
     )
@@ -282,7 +284,7 @@ async def evaluate_detection(
 async def batch_process_images(
     detector: DetectorDep,
     images: Annotated[list[UploadFile], File(description="Up to 10 SAR images.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
 ) -> BatchStatus:
     """Queue several images for background processing.
@@ -291,7 +293,6 @@ async def batch_process_images(
     temporary files once the response is sent -- a background task holding
     ``UploadFile`` objects would find them already closed.
     """
-    _validate_method(method)
     if not images:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No images supplied.")
     if len(images) > MAX_BATCH_SIZE:
@@ -313,7 +314,9 @@ async def batch_process_images(
     }
     _register_job(batch_id, job)
 
-    task = asyncio.create_task(_process_batch(detector, batch_id, payloads, method, mask_land))
+    task = asyncio.create_task(
+        _process_batch(detector, batch_id, payloads, method.value, mask_land)
+    )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
     return BatchStatus(**job)
@@ -329,15 +332,6 @@ async def get_batch_status(batch_id: str) -> BatchStatus:
 
 
 # ------------------------------------------------------------------ helpers
-
-
-def _validate_method(method: str) -> None:
-    """Reject unknown method names with a 400 that lists the valid ones."""
-    if method not in METHOD_NAMES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"Unknown method '{method}'. Available: {', '.join(METHOD_NAMES)}.",
-        )
 
 
 async def _read_upload(upload: UploadFile) -> bytes:

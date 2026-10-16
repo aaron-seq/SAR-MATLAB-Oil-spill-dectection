@@ -257,6 +257,13 @@ class TestOptionalDeepLearning:
 
         assert isinstance(dl.TORCH_AVAILABLE, bool)
 
+    def test_unknown_model_attribute_raises_attribute_error(self):
+        """The lazy export must not swallow typos into a confusing ImportError."""
+        import sar_oil_spill.models as models
+
+        with pytest.raises(AttributeError, match="no attribute 'DeepLearningSegmentaton'"):
+            _ = models.DeepLearningSegmentaton
+
     def test_helpful_error_when_torch_is_missing(self):
         from sar_oil_spill.models import deep_learning_segmentation as dl
 

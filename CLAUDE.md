@@ -22,7 +22,7 @@ pip install -e '.[api,dev]'          # set up
 pytest                               # 171 tests, ~10 s
 pytest tests/test_segmentation.py -v # one file
 ruff check .                         # must be clean
-mypy src/sar_oil_spill               # must be clean; enforced in CI
+mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
 
 sar-oil-spill demo                   # end-to-end on a synthetic scene
 sar-oil-spill benchmark --samples 20 # score every method

@@ -36,7 +36,7 @@ jobs:
         run: ruff check .
 
       - name: Type check
-        run: mypy src/sar_oil_spill
+        run: mypy src/sar_oil_spill api app.py scripts
 
       - name: Test
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
@@ -63,7 +63,7 @@ jobs:
           pip install -e '.[api,dl,dev]'
 
       - name: Type check against real torch types
-        run: mypy src/sar_oil_spill
+        run: mypy src/sar_oil_spill api app.py scripts
 
       - name: Test with the deep-learning path enabled
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing

@@ -308,7 +308,7 @@ pip install -e '.[api,dev]'
 pytest                                  # 171 tests
 pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 ruff check .
-mypy src/sar_oil_spill                  # must be clean; enforced in CI
+mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
 ```
 
 Coverage is **84%** overall as of the last run. Two modules pull that down and

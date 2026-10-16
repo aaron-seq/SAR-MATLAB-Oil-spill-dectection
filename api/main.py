@@ -15,7 +15,7 @@ import time
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
@@ -194,7 +194,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy" if _detector is not None else "starting",
         version=__version__,
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         detector_ready=_detector is not None,
         active_batch_jobs=sum(1 for j in _batch_jobs.values() if j["status"] == "processing"),
     )

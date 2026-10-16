@@ -41,6 +41,33 @@ jobs:
       - name: Test
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 
+  deep-learning:
+    # PyTorch is an optional extra, so the matrix above never installs it and
+    # tests/test_deep_learning.py skips there. Without this job the U-Net goes
+    # untested -- which is how predict() came to crash on every image whose
+    # sides were not multiples of 16. CPU wheels keep the install small.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU-only PyTorch, then the package
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e '.[api,dl,dev]'
+
+      - name: Type check against real torch types
+        run: mypy src/sar_oil_spill
+
+      - name: Test with the deep-learning path enabled
+        run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
+
   smoke:
     # Verifies the package works with only its base dependencies -- no API
     # extra, no PyTorch -- which is the configuration most library users get.

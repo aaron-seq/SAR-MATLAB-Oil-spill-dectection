@@ -85,6 +85,11 @@ known-first-party = ["sar_oil_spill", "api"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `api/` is an in-repo application, not part of the installed wheel, so the
+# repo root must be importable. `python -m pytest` adds it implicitly but the
+# bare `pytest` script (what CI and the docs use) does not -- that mismatch let
+# tests pass locally while CI failed with "No module named 'api'".
+pythonpath = ["."]
 addopts = "-q --strict-markers"
 filterwarnings = ["error::DeprecationWarning:sar_oil_spill.*"]
 

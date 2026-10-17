@@ -71,22 +71,42 @@ message and push. Do not open a pull request unless I ask.
 
 Paste one of these into the `## Your task` slot.
 
-### Get CI green
+### Load real SAR bit depths (#18)
 
 ````text
-PR #11 is open and CI has run. Two jobs were never exercised locally, because
-the development environment had no Docker daemon and only Python 3.11:
+Issue #18. Every image loader assumes 8-bit greyscale. Measured: a float32
+sigma-nought TIFF fails to load on the CLI and API and becomes an all-zero
+image in Streamlit; a uint16 scene with GRD-like values (0-600) collapses to
+three grey levels on the CLI and API and is clipped at 255 in Streamlit. The
+issue lists the five call sites.
 
-  - the `docker` job, which builds the multi-stage Dockerfile and health-checks
-    the container
-  - the Python 3.13 leg of the test matrix
+Add one shared loader that reads native bit depth and scales into the
+pipeline's 0-255 working range by a documented, configurable rule (dB window
+for sigma-nought, percentile stretch for integer DN). Route the CLI, dataset,
+processor, API and Streamlit through it. The API's header-only pixel check
+(`_check_dimensions`) must still run before any decode.
 
-Check the run, diagnose any failure from the job logs, and push fixes to
-`claude/codebase-review-modernize-qqqw8j` until every job passes. Report what
-was actually wrong — do not just retry the run.
+Prove it with tests: the same synthetic scene saved as uint8, uint16 and
+float32 must give the same loaded array on every surface and detect within
+0.02 IoU of the uint8 result.
 ````
 
-### Validate against real SAR data
+### Make batch status work across workers (#17)
+
+````text
+Issue #17. Batch jobs live in a per-process dict, and the production image
+runs two gunicorn workers, so /api/v1/batch-status 404s on about half of polls
+(measured 56 of 100) even in one container. TestClient is single-process, so
+the test suite cannot see it.
+
+First write a test or CI step that starts the shipped server configuration and
+polls a batch repeatedly; confirm it fails. Then fix it -- either one worker
+(measure throughput before and after) or a shared job store. Changing the
+worker model is an infrastructure decision: present the measurements and ask
+before committing to one.
+````
+
+### Validate against real SAR data (#13)
 
 ````text
 Every accuracy figure in this repository is measured on synthetic scenes. That
@@ -96,9 +116,9 @@ Add a reproducible evaluation path against real Sentinel-1 imagery:
 
   1. A downloader for a small public, redistributable set of Sentinel-1 GRD
      scenes with oil spill annotations. Do NOT commit imagery to the repository.
-  2. A loader that handles real GRD products — calibration to sigma-nought,
-     multi-look, and the fact that real scenes are far larger than 512x512
-     (tile them).
+  2. A loader that handles real GRD products, building on #18 — calibration
+     to sigma-nought, multi-look, and the fact that real scenes are far larger
+     than 512x512 (tile them).
   3. A `sar-oil-spill benchmark --real` path that scores the existing four
      methods on that data.
   4. A results table in the README, clearly separated from the synthetic one.
@@ -108,7 +128,7 @@ exactly as measured. A large drop is a finding, not a failure — the interestin
 output is which methods degrade least and why.
 ````
 
-### Discriminate look-alikes
+### Discriminate look-alikes (#14)
 
 ````text
 The methods here detect dark, smooth regions. Low-wind cells, biogenic films,
@@ -133,7 +153,7 @@ Report the precision/recall trade-off the classifier actually buys. If it does
 not help, say so and leave it disabled.
 ````
 
-### Train the U-Net
+### Train the U-Net (#16)
 
 ````text
 `models/deep_learning_segmentation.py` defines an attention-gated U-Net but
@@ -156,7 +176,7 @@ Be honest in the write-up about what training on synthetic data proves: it
 shows the architecture and training loop work, not that the model generalises.
 ````
 
-### Add georeferencing
+### Add georeferencing (#15)
 
 ````text
 Input is currently treated as a plain raster, so detections are reported in

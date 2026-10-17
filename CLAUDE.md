@@ -152,7 +152,12 @@ import it. `tests/test_packaging.py` now guards this.
   practice.
 - No georeferencing; areas are reported in pixels, not m².
 - The U-Net has no trained weights.
-- API batch jobs are in-process, so they are not safe across replicas.
+- Every loader reads 8-bit greyscale: float32 σ⁰ TIFFs fail to load and
+  low-valued uint16 collapses to a few grey levels, differently per surface
+  (#18).
+- API batch jobs are per-process. The production image runs two gunicorn
+  workers, so `/batch-status` 404s on about half of polls even in one
+  container (#17). `TestClient` is single-process and cannot see this.
 - No Docker daemon in the dev sandbox, so the images are only ever exercised
   by the CI `docker` job, which builds both targets and health-checks the API
   and the Streamlit UI.

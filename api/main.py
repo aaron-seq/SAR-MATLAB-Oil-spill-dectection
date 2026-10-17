@@ -52,9 +52,10 @@ CONTENT_TOO_LARGE = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 MAX_TRACKED_JOBS = 100
 VALID_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
 
-# Batch jobs live in memory, so a job is only visible to the worker that
-# created it and is lost on restart. That is deliberate for a single-node
-# deployment; put Redis behind this before running multiple replicas.
+# Batch jobs live in memory, so a job is only visible to the worker process
+# that created it and is lost on restart. With more than one worker -- the
+# production image runs two -- a status poll can land on the other process
+# and 404. See issue #17.
 _batch_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 # asyncio only holds weak references to running tasks, so a batch task that is

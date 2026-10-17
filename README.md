@@ -380,7 +380,12 @@ prompt with task blocks for the open work.
 - **No georeferencing.** Input is treated as a plain raster; there is no
   GeoTIFF/projection handling, so areas are reported in pixels, not m².
 - **No trained model.** The U-Net is architecture only.
-- **Batch state is in-process.** Not safe across multiple API replicas.
+- **8-bit input assumed.** Float32 σ⁰ TIFFs fail to load, and low-valued
+  uint16 (as in Sentinel-1 GRD) is reduced to a few grey levels; see
+  [#18](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/18).
+- **Batch state is per-process.** With the production image's two workers,
+  `/batch-status` returns 404 for about half of polls (measured 56 of 100);
+  see [#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17).
 
 ## Contributing
 

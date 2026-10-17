@@ -74,6 +74,11 @@ been run.
   both images, waits on the compose healthcheck, starts the `ui` profile — and
   fails if the production image exceeds 1.5 GB (it is 969 MB).
 
+### Known issues
+
+- `/batch-status` returns 404 for about half of polls with the production
+  image's two gunicorn workers, because batch jobs are held per process (#17).
+
 ## [3.0.0]
 
 A rebuild. The previous version did not execute — every entry point failed at

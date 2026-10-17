@@ -31,11 +31,13 @@ adds 131 MB over idle and takes 1.0 s; one at the 25-megapixel limit adds
 size memory for workers x concurrent requests x 0.8 GB, or lower
 `MAX_IMAGE_PIXELS` in `api/main.py`.
 
-Two caveats before scaling to multiple replicas:
+Two caveats before exposing or scaling the service:
 
-- **Batch jobs are in-process.** `/api/v1/batch-status/{id}` only knows about
-  jobs created by the worker that received the request, and jobs are lost on
-  restart. Put Redis or a real queue behind it before running more than one
-  replica.
+- **Batch jobs are per-process.** `/api/v1/batch-status/{id}` only knows about
+  jobs created by the worker process that handled the upload, and jobs are lost
+  on restart. This bites inside a single container: the production image runs
+  two gunicorn workers, and 56 of 100 status polls returned 404 in a measured
+  run. Run one worker if you rely on batches, or put a shared store behind
+  them ([#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17)).
 - **CORS is wide open** (`allow_origins=["*"]`) so the demo works from
   anywhere. Restrict it in `api/main.py` before exposing the service publicly.

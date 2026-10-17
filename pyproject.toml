@@ -40,7 +40,9 @@ api = [
     "python-multipart>=0.0.9",
     "gunicorn>=21.2; sys_platform != 'win32'",
 ]
-app = ["streamlit>=1.32"]
+# 1.49 is the first release accepting width="stretch" (measured: 1.48 rejects
+# it), which replaces the deprecated use_container_width.
+app = ["streamlit>=1.49"]
 # torch only: nothing in the package imports torchvision.
 dl = ["torch>=2.2"]
 dev = [

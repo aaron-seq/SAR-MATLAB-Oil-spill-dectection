@@ -74,6 +74,9 @@ method = st.sidebar.selectbox(
     METHOD_NAMES,
     format_func=lambda name: name.replace("_", " ").title(),
 )
+# selectbox only returns None for an empty option list or index=None, and
+# METHOD_NAMES is never empty -- this narrows the type, it is not a real branch.
+assert method is not None
 mask_land = st.sidebar.checkbox("Exclude land", value=False)
 min_area = st.sidebar.slider("Minimum detection size (px)", 0, 2000, 100, step=50)
 
@@ -134,15 +137,15 @@ left, right = st.columns(2)
 left.image(
     to_display(result.preprocessed_image),
     caption="Preprocessed SAR image",
-    use_container_width=True,
+    width="stretch",
 )
 right.image(
     overlay_mask(result.preprocessed_image, result.mask),
     caption=f"Detection — {method.replace('_', ' ')}",
-    use_container_width=True,
+    width="stretch",
 )
 
-if result.metrics is not None:
+if result.metrics is not None and ground_truth is not None:
     st.subheader("Accuracy against ground truth")
     m = result.metrics
     score_columns = st.columns(5)
@@ -170,7 +173,7 @@ with st.expander("Processing pipeline stages"):
             column.image(
                 to_display(result.stages[name]),
                 caption=name.capitalize(),
-                use_container_width=True,
+                width="stretch",
             )
 
 with st.expander("Processing history"):

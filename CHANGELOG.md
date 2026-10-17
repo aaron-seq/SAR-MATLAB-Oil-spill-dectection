@@ -10,6 +10,17 @@ Restores `main`, which has failed CI since 3.0.0 was merged, and resolves the
 open issues. Every fix below was found by running something that had never
 been run.
 
+### Security
+
+- **A single small upload could exhaust the server's memory.** The 25 MB cap
+  limits compressed bytes, not pixels: a blank 400-megapixel PNG is 389 kB,
+  and the pipeline needs memory in proportion to pixels — about 11.6 GB for
+  that one. Uploads are now limited to 25 megapixels, read from the image
+  header before decoding, on every endpoint (including `/evaluate`'s ground
+  truth, and `/batch-process` before anything is queued). Content whose header
+  Pillow cannot read is refused, since OpenCV would decode formats such as
+  Radiance HDR whose size the check could not see.
+
 ### Fixed
 
 - **Fresh clones could not import the package.** An unanchored `data/` rule in
@@ -40,6 +51,8 @@ been run.
   the schema against `METHOD_NAMES`, OpenAPI publishes the allowed values, and
   the error lists them. Removed the hand-written validator and two unused
   definitions.
+- **API: images over 25 megapixels now return 413**, and files whose format
+  cannot be identified from the header return 400. See Security above.
 - `streamlit>=1.49` for the `app` extra: the first release accepting
   `width="stretch"` (measured: 1.48 rejects it).
 - The test client uses `httpx2`, which Starlette 1.2 adopted in place of the
@@ -47,14 +60,19 @@ been run.
 - The `dl` extra no longer installs `torchvision`, which nothing imports.
 - The shipped Streamlit service opts out of Streamlit's usage telemetry.
 - mypy now covers `api/`, `app.py` and `scripts/`, not just `src/`.
+- The version is defined once, in `sar_oil_spill/__init__.py`; `pyproject.toml`
+  reads it from there, so the wheel, `/health` and `--version` cannot disagree.
+- CI actions moved to `actions/checkout@v7` and `actions/setup-python@v7`, off
+  the deprecated Node.js 20 runtime.
 
 ### Added
 
 - `tests/test_deep_learning.py` (24 tests) and `tests/test_app.py` (10 tests,
   running the real app through Streamlit's `AppTest`).
 - CI: an `optional-extras` job that runs those suites with CPU PyTorch and
-  Streamlit; the `docker` job now builds the development image, health-checks
-  the UI, and fails if the production image exceeds 1.5 GB.
+  Streamlit. The `docker` job now drives `docker-compose.yml` itself — builds
+  both images, waits on the compose healthcheck, starts the `ui` profile — and
+  fails if the production image exceeds 1.5 GB (it is 969 MB).
 
 ## [3.0.0]
 

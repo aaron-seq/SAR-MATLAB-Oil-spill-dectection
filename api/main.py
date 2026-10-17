@@ -41,9 +41,9 @@ logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 # The byte cap bounds compressed size, not pixels: a blank 400-megapixel PNG
-# is 389 kB. The pipeline despeckles at full resolution before resizing and
-# peaks at ~29 MB per megapixel (measured), so 25 MP keeps one request near
-# 0.7 GB. Checked from the image header, before anything is decoded.
+# is 389 kB. The pipeline despeckles at full resolution before resizing, so
+# memory scales with pixels: a request at this limit measured +0.8 GB over
+# idle. Checked from the image header, before anything is decoded.
 MAX_IMAGE_PIXELS = 25_000_000
 MAX_BATCH_SIZE = 10
 # Starlette 0.48 renamed HTTP_413_REQUEST_ENTITY_TOO_LARGE and deprecated the

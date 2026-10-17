@@ -84,6 +84,12 @@ class. Thresholding edges instead scored IoU 0.004.
 from strict to inclusive. Counting directly keeps one behaviour across all
 supported versions.
 
+**The API refuses images Pillow cannot read, even ones OpenCV decodes.** The
+25-megapixel limit is read from the header so a decompression bomb is caught
+before decoding. OpenCV sniffs content, not the filename, and decodes formats
+(Radiance HDR) whose size Pillow cannot report, so letting them through would
+reopen the hole. `TestDecompressionBombs` in `tests/test_api.py` pins this.
+
 **Despeckling filters use `cv2.blur`, not loops.** Local mean and variance come
 from separable box filters, so cost is independent of window size. An earlier
 version looped over every pixel — 262,144 iterations per 512×512 scene.

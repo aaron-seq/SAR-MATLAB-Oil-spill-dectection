@@ -260,8 +260,14 @@ as a dropdown, and anything else is rejected with **422** and a message listing
 the accepted values. Unsupported file types, empty or undecodable uploads get
 **400**; oversized ones get **413**.
 
+Uploads are capped at 25 MB, restricted by extension, and limited to
+**25 megapixels**. The pixel limit is read from the image header before
+anything is decoded, because a compressed file says little about its decoded
+size: a blank 400-megapixel PNG is 389 kB. Content whose header Pillow cannot
+read is refused rather than passed to OpenCV.
+
 Detection runs on a worker thread (`asyncio.to_thread`) so a large scene cannot
-block the event loop. Uploads are capped at 25 MB and restricted by extension.
+block the event loop.
 See [`deployment/README.md`](deployment/README.md) for the two things to change
 before exposing this publicly.
 
@@ -328,8 +334,8 @@ missing, so both setups work. Measured on the last run:
 
 | Installed | Result | Coverage |
 |---|---|---|
-| `.[api,dev]` | 173 passed, 4 skipped | 84% |
-| `.[api,app,dl,dev]` | 208 passed, 1 skipped | 93% |
+| `.[api,dev]` | 180 passed, 4 skipped | 83% |
+| `.[api,app,dl,dev]` | 215 passed, 1 skipped | 93% |
 
 The gap is the deep-learning path: without PyTorch,
 `deep_learning_segmentation.py` cannot execute. With it, that module is at 98%.

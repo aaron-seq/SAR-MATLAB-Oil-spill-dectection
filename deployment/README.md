@@ -24,6 +24,13 @@ batch registry. One 512x512 scene takes roughly 150-500 ms depending on the
 method (see the benchmark table in the README), so a single 1-vCPU instance
 handles a few requests per second.
 
+Memory scales with image size, because despeckling runs at full resolution
+before the scene is resized. Measured through the API: a 4-megapixel upload
+adds 131 MB over idle and takes 1.0 s; one at the 25-megapixel limit adds
+790 MB and takes 10.3 s. Each worker can run several requests at once, so
+size memory for workers x concurrent requests x 0.8 GB, or lower
+`MAX_IMAGE_PIXELS` in `api/main.py`.
+
 Two caveats before scaling to multiple replicas:
 
 - **Batch jobs are in-process.** `/api/v1/batch-status/{id}` only knows about

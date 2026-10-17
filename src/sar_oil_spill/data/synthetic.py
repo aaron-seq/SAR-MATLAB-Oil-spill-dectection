@@ -21,6 +21,7 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 from scipy import ndimage
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,10 @@ def generate_sar_scene(
     sea_sigma0 = (gradient * wind_texture).astype(np.float32)
 
     # --- Land: a bright, rough region occupying one edge.
-    land_mask = np.zeros((height, width), dtype=bool)
+    # Annotated so the type stays "boolean array" whatever shape numpy's stubs
+    # infer: numpy 2.2 types np.zeros as fixed 2-D and rejects the reassignment
+    # below, while numpy 2.4 does not -- mypy passed on 3.11 and failed on 3.10.
+    land_mask: npt.NDArray[np.bool_] = np.zeros((height, width), dtype=bool)
     if with_land:
         coastline = (
             0.22 * width

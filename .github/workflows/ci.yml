@@ -41,11 +41,13 @@ jobs:
       - name: Test
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 
-  deep-learning:
-    # PyTorch is an optional extra, so the matrix above never installs it and
-    # tests/test_deep_learning.py skips there. Without this job the U-Net goes
-    # untested -- which is how predict() came to crash on every image whose
-    # sides were not multiples of 16. CPU wheels keep the install small.
+  optional-extras:
+    # The `dl` (PyTorch) and `app` (Streamlit) extras are optional, so the
+    # matrix above never installs them and their tests skip there. Without
+    # this job neither path is exercised -- which is how the U-Net's predict()
+    # came to crash on any image whose sides were not multiples of 16, and how
+    # app.py went its whole life without once being executed. CPU torch wheels
+    # keep the install small.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,16 +58,16 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install CPU-only PyTorch, then the package
+      - name: Install CPU-only PyTorch, then the package with every extra
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e '.[api,dl,dev]'
+          pip install -e '.[api,app,dl,dev]'
 
       - name: Type check against real torch types
         run: mypy src/sar_oil_spill api app.py scripts
 
-      - name: Test with the deep-learning path enabled
+      - name: Test with the deep-learning and Streamlit paths enabled
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 
   smoke:
@@ -138,3 +140,25 @@ jobs:
             sleep 2
           done
           echo "service did not become healthy"; docker logs api; exit 1
+
+      - name: "Enforce the image size budget (issue #5 sets 1.5 GB)"
+        run: |
+          bytes=$(docker image inspect sar-oil-spill:ci --format '{{.Size}}')
+          echo "production image: $((bytes / 1000000)) MB"
+          test "$bytes" -lt 1500000000 || { echo "over the 1.5 GB budget"; exit 1; }
+
+      - name: Build the development image used by the compose `ui` service
+        run: docker build --target development -t sar-oil-spill:dev .
+
+      - name: Check the Streamlit UI starts from the development image
+        run: |
+          docker run -d --name ui -p 8501:8501 sar-oil-spill:dev \
+            streamlit run app.py --server.address=0.0.0.0 --server.port=8501 \
+            --server.headless=true --browser.gatherUsageStats=false
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8501/_stcore/health; then
+              echo " -> ui healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "ui did not become healthy"; docker logs ui; exit 1

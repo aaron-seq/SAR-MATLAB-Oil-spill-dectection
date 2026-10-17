@@ -99,6 +99,16 @@ class TestDeclaredPackagingIsComplete:
         content = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         assert 'packages = ["src/sar_oil_spill"]' in content
 
+    def test_installed_version_matches_the_package_version(self):
+        """One version, one place. `pyproject.toml` reads it from
+        ``__init__.py``, so the wheel, the API's /health response and the CLI's
+        --version can never disagree about which release is running."""
+        from importlib.metadata import version
+
+        import sar_oil_spill
+
+        assert version("sar-oil-spill") == sar_oil_spill.__version__
+
     def test_console_script_entry_point_resolves(self):
         """The `sar-oil-spill` entry point must import and be callable."""
         from sar_oil_spill.cli import main

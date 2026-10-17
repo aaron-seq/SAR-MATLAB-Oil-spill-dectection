@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sar-oil-spill"
-version = "3.0.0"
+# Read from src/sar_oil_spill/__init__.py so the version lives in exactly one place.
+dynamic = ["version"]
 description = "Oil spill detection and segmentation in Synthetic Aperture Radar imagery"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -62,6 +63,9 @@ sar-oil-spill = "sar_oil_spill.cli:main"
 [project.urls]
 Homepage = "https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection"
 Issues = "https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues"
+
+[tool.hatch.version]
+path = "src/sar_oil_spill/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sar_oil_spill"]

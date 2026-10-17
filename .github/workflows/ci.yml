@@ -125,40 +125,38 @@ jobs:
           pip-audit --progress-spinner off
 
   docker:
+    # Drives docker-compose.yml itself rather than re-implementing its
+    # commands here, so a broken compose file -- the subject of issue #4 --
+    # fails CI instead of passing unnoticed.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Build the image
-        run: docker build --target production -t sar-oil-spill:ci .
-      - name: Check the API answers its health probe
-        run: |
-          docker run -d --name api -p 8000:8000 sar-oil-spill:ci
-          for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/health; then
-              echo "healthy"; exit 0
-            fi
-            sleep 2
-          done
-          echo "service did not become healthy"; docker logs api; exit 1
+
+      - name: Build both images through compose
+        run: docker compose --profile ui build
 
       - name: "Enforce the image size budget (issue #5 sets 1.5 GB)"
         run: |
-          bytes=$(docker image inspect sar-oil-spill:ci --format '{{.Size}}')
+          bytes=$(docker image inspect sar-oil-spill:latest --format '{{.Size}}')
           echo "production image: $((bytes / 1000000)) MB"
           test "$bytes" -lt 1500000000 || { echo "over the 1.5 GB budget"; exit 1; }
 
-      - name: Build the development image used by the compose `ui` service
-        run: docker build --target development -t sar-oil-spill:dev .
-
-      - name: Check the Streamlit UI starts from the development image
+      - name: Start the API and wait for its compose healthcheck
         run: |
-          docker run -d --name ui -p 8501:8501 sar-oil-spill:dev \
-            streamlit run app.py --server.address=0.0.0.0 --server.port=8501 \
-            --server.headless=true --browser.gatherUsageStats=false
+          docker compose up -d --wait --wait-timeout 180 api
+          curl -fsS http://localhost:8000/health
+
+      - name: Start the Streamlit UI and check it answers
+        run: |
+          docker compose --profile ui up -d ui
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8501/_stcore/health; then
               echo " -> ui healthy"; exit 0
             fi
             sleep 2
           done
-          echo "ui did not become healthy"; docker logs ui; exit 1
+          echo "ui did not become healthy"; exit 1
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose --profile ui logs

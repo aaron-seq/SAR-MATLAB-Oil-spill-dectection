@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import time
 import uuid
+import warnings
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum
+from http import HTTPStatus
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -25,6 +28,7 @@ import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from sar_oil_spill import __version__
@@ -36,7 +40,15 @@ from sar_oil_spill.utils import PerformanceEvaluator
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+# The byte cap bounds compressed size, not pixels: a blank 400-megapixel PNG
+# is 389 kB. The pipeline despeckles at full resolution before resizing and
+# peaks at ~29 MB per megapixel (measured), so 25 MP keeps one request near
+# 0.7 GB. Checked from the image header, before anything is decoded.
+MAX_IMAGE_PIXELS = 25_000_000
 MAX_BATCH_SIZE = 10
+# Starlette 0.48 renamed HTTP_413_REQUEST_ENTITY_TOO_LARGE and deprecated the
+# old name, but the `api` extra still admits releases without the new one.
+CONTENT_TOO_LARGE = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 MAX_TRACKED_JOBS = 100
 VALID_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
 
@@ -349,10 +361,43 @@ async def _read_upload(upload: UploadFile) -> bytes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Uploaded file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            CONTENT_TOO_LARGE,
             f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
         )
+    _check_dimensions(data)
     return data
+
+
+def _check_dimensions(data: bytes) -> None:
+    """Reject images over ``MAX_IMAGE_PIXELS`` without decoding them.
+
+    ``Image.open`` parses only the header. Content Pillow cannot identify is
+    refused rather than passed on: OpenCV sniffs the bytes, not the filename,
+    and decodes formats (Radiance HDR, for one) whose size we would not see.
+    """
+    try:
+        with warnings.catch_warnings():
+            # Pillow warns above its own ~89 MP default; the limit below is ours.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                width, height = image.size
+    except Image.DecompressionBombError:
+        # Pillow refuses outright above twice its default, ~179 MP.
+        raise HTTPException(
+            CONTENT_TOO_LARGE,
+            f"Image exceeds the {MAX_IMAGE_PIXELS / 1e6:.0f} megapixel limit.",
+        ) from None
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Could not decode the file as an image."
+        ) from None
+
+    if width * height > MAX_IMAGE_PIXELS:
+        raise HTTPException(
+            CONTENT_TOO_LARGE,
+            f"Image is {width}x{height} ({width * height / 1e6:.1f} megapixels); "
+            f"the limit is {MAX_IMAGE_PIXELS / 1e6:.0f} megapixels.",
+        )
 
 
 async def _decode_upload(upload: UploadFile) -> np.ndarray:

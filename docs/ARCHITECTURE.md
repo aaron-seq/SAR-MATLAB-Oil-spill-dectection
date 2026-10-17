@@ -166,6 +166,14 @@ document, so the two cannot silently drift.
 | `test_evaluation.py` | Metrics against hand-computed values; mask encoding equivalence |
 | `test_api.py` | Every endpoint, including rejection paths |
 | `test_data_and_config.py` | Synthetic generator physics, dataset indexing, config loading, CLI |
+| `test_deep_learning.py` | U-Net on arbitrary sizes, checkpoint round-trips and safe loading, trainability (needs `dl`) |
+| `test_app.py` | The real `app.py` through Streamlit's `AppTest`: every method, upload mode (needs `app`) |
+| `test_packaging.py` | Every source file is tracked by git; nothing in the package is gitignored |
+
+The two files marked "needs" skip without their extra; the CI `optional-extras`
+job is the one that runs them. `test_packaging.py` exists because a working
+tree can look complete while the repository is not: it compares the files on
+disk with `git ls-files`.
 
 The synthetic generator is what makes this tractable: tests get scenes with
 *known* ground truth, so accuracy assertions are meaningful rather than

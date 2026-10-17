@@ -255,6 +255,11 @@ with open("mask.png", "wb") as handle:
     handle.write(base64.b64decode(results["detection_mask_png_base64"]))
 ```
 
+`method` is validated in the schema: `/api/docs` offers the four method names
+as a dropdown, and anything else is rejected with **422** and a message listing
+the accepted values. Unsupported file types, empty or undecodable uploads get
+**400**; oversized ones get **413**.
+
 Detection runs on a worker thread (`asyncio.to_thread`) so a large scene cannot
 block the event loop. Uploads are capped at 25 MB and restricted by extension.
 See [`deployment/README.md`](deployment/README.md) for the two things to change
@@ -279,8 +284,14 @@ model.load_checkpoint("models/unet_best.pt")   # you must train this yourself
 probabilities = model.predict(image)
 ```
 
-Without the extra installed, importing it raises an `ImportError` naming the
-extra; everything else keeps working.
+`predict` accepts scenes of any size: the network needs sides that are
+multiples of 16, so the image is reflect-padded and the result cropped back.
+(Reflect, not zero: a zero border is dark, and dark is what oil looks like.)
+Checkpoints load with `torch.load(..., weights_only=True)`, so a file carrying
+pickled code is refused rather than executed.
+
+Without the extra installed the import still succeeds, but constructing the
+class raises an `ImportError` naming the extra; everything else keeps working.
 
 ## Project layout
 
@@ -294,7 +305,7 @@ src/sar_oil_spill/         # the installable package
 └── utils/                 # metrics + figure generation
 api/                       # FastAPI service
 matlab/                    # the original MATLAB implementation
-tests/                     # 171 tests
+tests/                     # 209 tests
 scripts/                   # regenerate documentation figures
 docs/                      # figures, MATLAB guide, SAR background
 config/model_config.yaml   # runtime configuration
@@ -303,22 +314,33 @@ config/model_config.yaml   # runtime configuration
 ## Development
 
 ```bash
-pip install -e '.[api,dev]'
+pip install -e '.[api,dev]'             # what the CI test matrix installs
+pip install -e '.[api,app,dl,dev]'      # everything, incl. Streamlit and PyTorch
 
-pytest                                  # 171 tests
+pytest                                  # bare `pytest`, exactly as CI runs it
 pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 ruff check .
 mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
 ```
 
-Coverage is **84%** overall as of the last run. Two modules pull that down and
-both are the untrained deep-learning path: `deep_learning_segmentation.py` at
-11% and the lazy-export shim in `models/__init__.py` at 45%, neither of which
-executes without PyTorch installed. Every other module sits between 80% and
-100%, with the core pipeline (`oil_spill_detector.py` 95%,
-`sar_image_processor.py` 93%, `performance_evaluator.py` 98%) at the top.
+The Streamlit and PyTorch test files skip themselves when their extra is
+missing, so both setups work. Measured on the last run:
 
-CI runs the suite on Python 3.10 through 3.13.
+| Installed | Result | Coverage |
+|---|---|---|
+| `.[api,dev]` | 173 passed, 4 skipped | 84% |
+| `.[api,app,dl,dev]` | 208 passed, 1 skipped | 93% |
+
+The gap is the deep-learning path: without PyTorch,
+`deep_learning_segmentation.py` cannot execute. With it, that module is at 98%.
+The remaining skips are correct by design: the two git-dependent packaging
+guards skip outside a git checkout, and the "PyTorch is missing" error test
+skips when PyTorch is present.
+
+CI runs the lean suite on Python 3.10–3.13, plus an `optional-extras` job that
+installs CPU-only PyTorch and Streamlit and runs everything, and a `docker` job
+that builds both images, health-checks the API and the UI, and fails if the
+production image exceeds 1.5 GB.
 
 ## Documentation
 

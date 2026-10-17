@@ -4,6 +4,58 @@ Notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1]
+
+Restores `main`, which has failed CI since 3.0.0 was merged, and resolves the
+open issues. Every fix below was found by running something that had never
+been run.
+
+### Fixed
+
+- **Fresh clones could not import the package.** An unanchored `data/` rule in
+  `.gitignore` also matched `src/sar_oil_spill/data/`, so the synthetic
+  generator and dataset loader were never committed. Rules are now
+  root-anchored and `tests/test_packaging.py` compares the tree with
+  `git ls-files`.
+- **The U-Net crashed on most real images.** `predict()` failed on any image
+  whose sides were not multiples of 16 (e.g. 100 px floors to 12 at the bottom
+  of the encoder; the concat then sees 24 vs 25). It now reflect-pads and crops
+  back. The module had never been executed; its coverage went from 11% to 98%.
+- **The API could not import on Python 3.10** (`datetime.UTC` is 3.11+), which
+  the package declares as supported.
+- **The Streamlit UI used a removed API.** `use_container_width` was scheduled
+  for removal after 2025-12-31; replaced with `width="stretch"`.
+- **`docker compose --profile ui up` could not start.** The development image
+  did not install Streamlit.
+- **Bare `pytest` could not import `api`**, while `python -m pytest` could; CI
+  uses the former. Fixed with pytest's `pythonpath` setting.
+- **mypy failed on Python 3.10 only**: numpy 2.2's stubs (the newest numpy on
+  3.10) type arrays differently from numpy 2.4+.
+- Ruff's isort classified `sar_oil_spill` differently locally and in CI; the
+  first-party packages are now declared explicitly.
+
+### Changed
+
+- **API: an unknown `method` now returns 422, not 400** (#7). It is validated in
+  the schema against `METHOD_NAMES`, OpenAPI publishes the allowed values, and
+  the error lists them. Removed the hand-written validator and two unused
+  definitions.
+- `streamlit>=1.49` for the `app` extra: the first release accepting
+  `width="stretch"` (measured: 1.48 rejects it).
+- The test client uses `httpx2`, which Starlette 1.2 adopted in place of the
+  now-deprecated `httpx`.
+- The `dl` extra no longer installs `torchvision`, which nothing imports.
+- The shipped Streamlit service opts out of Streamlit's usage telemetry.
+- mypy now covers `api/`, `app.py` and `scripts/`, not just `src/`.
+
+### Added
+
+- `tests/test_deep_learning.py` (24 tests) and `tests/test_app.py` (10 tests,
+  running the real app through Streamlit's `AppTest`).
+- CI: an `optional-extras` job that runs those suites with CPU PyTorch and
+  Streamlit; the `docker` job now builds the development image, health-checks
+  the UI, and fails if the production image exceeds 1.5 GB.
+
 ## [3.0.0]
 
 A rebuild. The previous version did not execute — every entry point failed at

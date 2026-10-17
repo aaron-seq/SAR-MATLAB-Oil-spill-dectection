@@ -17,9 +17,10 @@ is wrong no matter what the metrics say.
 ## Commands
 
 ```bash
-pip install -e '.[api,dev]'          # set up
+pip install -e '.[api,dev]'          # set up (what the CI matrix installs)
+pip install -e '.[api,app,dl,dev]'   # also runs the Streamlit and U-Net tests
 
-pytest                               # 171 tests, ~10 s
+pytest                               # bare pytest, as CI runs it; ~10 s lean
 pytest tests/test_segmentation.py -v # one file
 ruff check .                         # must be clean
 mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
@@ -105,6 +106,19 @@ guard. CI has a job that verifies this.
 **Never edit `matlab/`.** It is the historical record. Document divergences in
 `docs/MATLAB.md`.
 
+**Verify the way CI runs, not the way that happens to work locally.** Use the
+bare `pytest` script, not `python -m pytest` (which silently adds the repo root
+to `sys.path` and once hid a CI-only `No module named 'api'`). Before claiming a
+change works, run it from a `git archive HEAD` export in a fresh venv: that is
+how an unanchored `.gitignore` rule and a numpy-version-dependent mypy failure
+were caught. The test matrix spans Python 3.10–3.13, and older Pythons resolve
+older numpy (3.10 gets numpy 2.2), so type stubs differ between legs.
+
+**Optional extras must be exercised somewhere.** `tests/test_deep_learning.py`
+and `tests/test_app.py` skip without their extras; the CI `optional-extras` job
+is what runs them. Before it existed, the U-Net crashed on any image whose
+sides were not multiples of 16 and `app.py` had never been executed.
+
 **Tests are named for behaviour**, not for the function they call —
 `test_slicks_are_darker_than_the_sea`, not `test_generate_sar_scene`.
 
@@ -133,7 +147,8 @@ import it. `tests/test_packaging.py` now guards this.
 - No georeferencing; areas are reported in pixels, not m².
 - The U-Net has no trained weights.
 - API batch jobs are in-process, so they are not safe across replicas.
-- No Docker daemon in the dev sandbox, so the image is only ever exercised by
-  the CI `docker` job (which does pass).
+- No Docker daemon in the dev sandbox, so the images are only ever exercised
+  by the CI `docker` job, which builds both targets and health-checks the API
+  and the Streamlit UI.
 
 `docs/dispatch-prompt.md` has ready-made task blocks for several of these.

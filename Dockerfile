@@ -90,7 +90,8 @@ ENV ENVIRONMENT=development
 USER root
 COPY tests/ ./tests/
 COPY scripts/ ./scripts/
-RUN pip install '.[api,dev]' && chown -R appuser:appuser /app
+# `app` is required: docker-compose's `ui` service runs Streamlit from this image.
+RUN pip install '.[api,app,dev]' && chown -R appuser:appuser /app
 USER appuser
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

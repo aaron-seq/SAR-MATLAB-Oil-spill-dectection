@@ -21,18 +21,21 @@ ENV/
 coverage.xml
 htmlcov/
 
-# Project outputs
-results/
-logs/
-models/saved_models/
+# Project outputs. Leading slash anchors these to the repository root so they
+# cannot match a source directory of the same name deeper in the tree.
+/results/
+/logs/
+/models/saved_models/
 *.pth
 *.pt
 *.h5
 *.ckpt
 
-# Datasets (never commit imagery)
-data/
-datasets/
+# Datasets (never commit imagery). MUST stay anchored: an unanchored `data/`
+# also matches src/sar_oil_spill/data/, which silently excluded the synthetic
+# generator and dataset loader from the repository.
+/data/
+/datasets/
 *.tif
 *.tiff
 

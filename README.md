@@ -1,6 +1,6 @@
 # SAR Oil Spill Detection
 
-[![CI](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml)
+[![CI](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://docs.astral.sh/ruff/)
@@ -28,7 +28,7 @@ No dataset and no trained model required — a synthetic SAR generator ships wit
 the package, so the pipeline runs on a clean clone:
 
 ```bash
-git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
+git clone https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection.git
 cd SAR-MATLAB-Oil-spill-dectection
 
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -255,8 +255,19 @@ with open("mask.png", "wb") as handle:
     handle.write(base64.b64decode(results["detection_mask_png_base64"]))
 ```
 
+`method` is validated in the schema: `/api/docs` offers the four method names
+as a dropdown, and anything else is rejected with **422** and a message listing
+the accepted values. Unsupported file types, empty or undecodable uploads get
+**400**; oversized ones get **413**.
+
+Uploads are capped at 25 MB, restricted by extension, and limited to
+**25 megapixels**. The pixel limit is read from the image header before
+anything is decoded, because a compressed file says little about its decoded
+size: a blank 400-megapixel PNG is 389 kB. Content whose header Pillow cannot
+read is refused rather than passed to OpenCV.
+
 Detection runs on a worker thread (`asyncio.to_thread`) so a large scene cannot
-block the event loop. Uploads are capped at 25 MB and restricted by extension.
+block the event loop.
 See [`deployment/README.md`](deployment/README.md) for the two things to change
 before exposing this publicly.
 
@@ -279,8 +290,14 @@ model.load_checkpoint("models/unet_best.pt")   # you must train this yourself
 probabilities = model.predict(image)
 ```
 
-Without the extra installed, importing it raises an `ImportError` naming the
-extra; everything else keeps working.
+`predict` accepts scenes of any size: the network needs sides that are
+multiples of 16, so the image is reflect-padded and the result cropped back.
+(Reflect, not zero: a zero border is dark, and dark is what oil looks like.)
+Checkpoints load with `torch.load(..., weights_only=True)`, so a file carrying
+pickled code is refused rather than executed.
+
+Without the extra installed the import still succeeds, but constructing the
+class raises an `ImportError` naming the extra; everything else keeps working.
 
 ## Project layout
 
@@ -294,7 +311,7 @@ src/sar_oil_spill/         # the installable package
 └── utils/                 # metrics + figure generation
 api/                       # FastAPI service
 matlab/                    # the original MATLAB implementation
-tests/                     # 165 tests
+tests/                     # 209 tests
 scripts/                   # regenerate documentation figures
 docs/                      # figures, MATLAB guide, SAR background
 config/model_config.yaml   # runtime configuration
@@ -303,26 +320,54 @@ config/model_config.yaml   # runtime configuration
 ## Development
 
 ```bash
-pip install -e '.[api,dev]'
+pip install -e '.[api,dev]'             # what the CI test matrix installs
+pip install -e '.[api,app,dl,dev]'      # everything, incl. Streamlit and PyTorch
 
-pytest                                  # 165 tests
+pytest                                  # bare `pytest`, exactly as CI runs it
 pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 ruff check .
-mypy src/sar_oil_spill
+mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
 ```
 
-Coverage is **84%** overall as of the last run. The largest gap is
-`deep_learning_segmentation.py` at 11%, because PyTorch is not installed in CI;
-everything else sits between 79% and 100%.
+The Streamlit and PyTorch test files skip themselves when their extra is
+missing, so both setups work. Measured on the last run:
 
-CI runs the suite on Python 3.10 through 3.13.
+| Installed | Result | Coverage |
+|---|---|---|
+| `.[api,dev]` | 180 passed, 4 skipped | 83% |
+| `.[api,app,dl,dev]` | 215 passed, 1 skipped | 93% |
 
-## MATLAB original
+The gap is the deep-learning path: without PyTorch,
+`deep_learning_segmentation.py` cannot execute. With it, that module is at 98%.
+The remaining skips are correct by design: the two git-dependent packaging
+guards skip outside a git checkout, and the "PyTorch is missing" error test
+skips when PyTorch is present.
 
-The original implementation is preserved verbatim in [`matlab/`](matlab/) and
-documented in [`docs/MATLAB.md`](docs/MATLAB.md), including a function-by-function
-map to the Python port. Background on SAR oil spill sensing is in
-[`docs/sar-background.md`](docs/sar-background.md).
+CI runs the lean suite on Python 3.10–3.13, plus an `optional-extras` job that
+installs CPU-only PyTorch and Streamlit and runs everything, and a `docker` job
+that builds both images, health-checks the API and the UI, and fails if the
+production image exceeds 1.5 GB.
+
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the code is put together, and why each design choice was made |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every config key, with tuning guidance and measured parameter sweeps |
+| [docs/MATLAB.md](docs/MATLAB.md) | The original MATLAB code, mapped function by function to the port |
+| [docs/sar-background.md](docs/sar-background.md) | Why SAR suits oil spill monitoring |
+| [deployment/README.md](deployment/README.md) | Deployment targets, sizing, and what to change before going public |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and house rules |
+| [CHANGELOG.md](CHANGELOG.md) | What changed and why |
+
+The original MATLAB implementation is preserved verbatim in
+[`matlab/`](matlab/). [`docs/MATLAB.md`](docs/MATLAB.md) records the four places
+where the Python port deliberately behaves differently — two of which fix
+measurable bugs in the original.
+
+Working with an AI coding agent? [`CLAUDE.md`](CLAUDE.md) is a repository guide,
+and [`docs/dispatch-prompt.md`](docs/dispatch-prompt.md) is a ready-to-paste
+prompt with task blocks for the open work.
 
 ## Limitations
 
@@ -335,7 +380,12 @@ map to the Python port. Background on SAR oil spill sensing is in
 - **No georeferencing.** Input is treated as a plain raster; there is no
   GeoTIFF/projection handling, so areas are reported in pixels, not m².
 - **No trained model.** The U-Net is architecture only.
-- **Batch state is in-process.** Not safe across multiple API replicas.
+- **8-bit input assumed.** Float32 σ⁰ TIFFs fail to load, and low-valued
+  uint16 (as in Sentinel-1 GRD) is reduced to a few grey levels; see
+  [#18](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/18).
+- **Batch state is per-process.** With the production image's two workers,
+  `/batch-status` returns 404 for about half of polls (measured 56 of 100);
+  see [#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17).
 
 ## Contributing
 

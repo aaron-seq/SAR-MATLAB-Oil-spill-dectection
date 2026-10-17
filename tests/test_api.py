@@ -8,10 +8,11 @@ import io
 import cv2
 import numpy as np
 import pytest
-from api.main import app
 from fastapi.testclient import TestClient
 
+from api.main import app
 from sar_oil_spill.data import generate_sar_scene
+from sar_oil_spill.models import METHOD_NAMES
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +58,14 @@ class TestMetaEndpoints:
     def test_openapi_schema_is_served(self, client):
         assert client.get("/openapi.json").status_code == 200
 
+    def test_openapi_advertises_methods_as_an_enum(self, client):
+        """Issue #7: the method parameter is a closed set in the schema, driven
+        by the same METHOD_NAMES registry as the CLI -- not a free string."""
+        schemas = client.get("/openapi.json").json()["components"]["schemas"]
+
+        enums = [schema["enum"] for schema in schemas.values() if "enum" in schema]
+        assert sorted(METHOD_NAMES) in [sorted(values) for values in enums]
+
 
 class TestDetectEndpoint:
     def test_detects_oil_in_a_synthetic_scene(self, client, sar_png):
@@ -94,13 +103,16 @@ class TestDetectEndpoint:
         assert response.status_code == 200
         assert response.json()["results"]["method"] == method
 
-    def test_unknown_method_is_rejected(self, client, sar_png):
+    def test_unknown_method_is_rejected_with_the_permitted_values(self, client, sar_png):
+        """Issue #7: invalid parameters fail validation at the boundary (422),
+        and the message tells the caller what *would* have been accepted."""
         response = client.post(
             "/api/v1/detect", files={"image_file": upload(sar_png)}, data={"method": "telepathy"}
         )
 
-        assert response.status_code == 400
-        assert "Unknown method" in response.json()["detail"]
+        assert response.status_code == 422
+        message = str(response.json()["detail"])
+        assert all(name in message for name in METHOD_NAMES)
 
     def test_unsupported_extension_is_rejected(self, client, sar_png):
         response = client.post(
@@ -114,6 +126,16 @@ class TestDetectEndpoint:
         response = client.post("/api/v1/detect", files={"image_file": upload(b"")})
         assert response.status_code == 400
 
+    def test_oversized_file_is_rejected(self, client, sar_png, monkeypatch):
+        import api.main
+
+        monkeypatch.setattr(api.main, "MAX_UPLOAD_BYTES", len(sar_png) - 1)
+
+        response = client.post("/api/v1/detect", files={"image_file": upload(sar_png)})
+
+        assert response.status_code == 413
+        assert "MB limit" in response.json()["detail"]
+
     def test_undecodable_upload_is_rejected(self, client):
         response = client.post("/api/v1/detect", files={"image_file": upload(b"not an image")})
 
@@ -122,6 +144,74 @@ class TestDetectEndpoint:
 
     def test_missing_file_is_a_validation_error(self, client):
         assert client.post("/api/v1/detect").status_code == 422
+
+
+def uniform_png(height: int, width: int) -> bytes:
+    """A blank PNG. Compresses ~1000:1, so huge images are tiny on the wire."""
+    return cv2.imencode(
+        ".png", np.zeros((height, width), np.uint8), [cv2.IMWRITE_PNG_COMPRESSION, 9]
+    )[1].tobytes()
+
+
+class TestDecompressionBombs:
+    """The 25 MB upload cap bounds compressed bytes, not pixels. Measured: a
+    400-megapixel blank PNG is 389 kB, and the pipeline needs ~29 MB per
+    megapixel because it despeckles before resizing -- ~11.6 GB from one
+    request. Dimensions must be checked from the header, before decoding."""
+
+    def test_oversized_image_is_rejected_before_decoding(self, client):
+        bomb = uniform_png(6_000, 6_000)  # 36 MP, ~35 kB on the wire
+        assert len(bomb) < 100_000
+
+        response = client.post("/api/v1/detect", files={"image_file": upload(bomb)})
+
+        assert response.status_code == 413
+        assert "megapixel" in response.json()["detail"]
+
+    def test_limit_is_inclusive_and_exact(self, client, monkeypatch):
+        """An image of exactly MAX_IMAGE_PIXELS is accepted; one more row is not."""
+        import api.main
+
+        monkeypatch.setattr(api.main, "MAX_IMAGE_PIXELS", 64 * 64)
+
+        at_limit = client.post("/api/v1/detect", files={"image_file": upload(uniform_png(64, 64))})
+        over = client.post("/api/v1/detect", files={"image_file": upload(uniform_png(65, 64))})
+
+        assert at_limit.status_code == 200
+        assert over.status_code == 413
+
+    def test_batch_rejects_a_bomb_before_queueing(self, client, sar_png):
+        """Otherwise the background task would decode it after the 200."""
+        response = client.post(
+            "/api/v1/batch-process",
+            files=[
+                ("images", upload(sar_png, "fine.png")),
+                ("images", upload(uniform_png(6_000, 6_000), "bomb.png")),
+            ],
+        )
+        assert response.status_code == 413
+
+    def test_ground_truth_uploads_are_checked_too(self, client, sar_png):
+        response = client.post(
+            "/api/v1/evaluate",
+            files={
+                "image_file": upload(sar_png),
+                "ground_truth_file": upload(uniform_png(6_000, 6_000), "truth.png"),
+            },
+        )
+        assert response.status_code == 413
+
+    def test_formats_the_header_check_cannot_read_are_refused(self, client):
+        """Fail closed. OpenCV sniffs content, not the filename, and decodes
+        formats Pillow cannot read -- Radiance HDR among them -- so an image
+        whose size the header check cannot see must not reach OpenCV."""
+        hdr = cv2.imencode(".hdr", np.full((8, 8, 3), 0.5, np.float32))[1].tobytes()
+        assert cv2.imdecode(np.frombuffer(hdr, np.uint8), cv2.IMREAD_GRAYSCALE) is not None
+
+        response = client.post("/api/v1/detect", files={"image_file": upload(hdr)})
+
+        assert response.status_code == 400
+        assert "decode" in response.json()["detail"].lower()
 
 
 class TestEvaluateEndpoint:
@@ -141,6 +231,17 @@ class TestEvaluateEndpoint:
 
     def test_requires_both_files(self, client, sar_png):
         response = client.post("/api/v1/evaluate", files={"image_file": upload(sar_png)})
+        assert response.status_code == 422
+
+    def test_unknown_method_is_rejected(self, client, sar_png, truth_png):
+        response = client.post(
+            "/api/v1/evaluate",
+            files={
+                "image_file": upload(sar_png),
+                "ground_truth_file": upload(truth_png, "truth.png"),
+            },
+            data={"method": "telepathy"},
+        )
         assert response.status_code == 422
 
 
@@ -166,6 +267,16 @@ class TestBatchEndpoints:
 
         assert response.status_code == 400
         assert "At most 10" in response.json()["detail"]
+
+    def test_batch_rejects_unknown_method_before_queueing(self, client, sar_png):
+        """Validation must happen up front, not inside the background task
+        where the caller would only discover it by polling."""
+        response = client.post(
+            "/api/v1/batch-process",
+            files=[("images", upload(sar_png))],
+            data={"method": "telepathy"},
+        )
+        assert response.status_code == 422
 
     def test_unknown_batch_id_returns_404(self, client):
         assert client.get("/api/v1/batch-status/does-not-exist").status_code == 404

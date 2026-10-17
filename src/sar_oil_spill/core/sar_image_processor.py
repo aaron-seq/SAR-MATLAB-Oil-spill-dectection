@@ -280,7 +280,8 @@ class SARImageProcessor:
             enhanced = image
         elif method == "clahe":
             clip_limit = float(kwargs.get("clip_limit", 3.0))  # type: ignore[arg-type]
-            tile_grid_size = tuple(kwargs.get("tile_grid_size", (8, 8)))  # type: ignore[arg-type]
+            grid = kwargs.get("tile_grid_size", (8, 8))
+            tile_grid_size: tuple[int, int] = (int(grid[0]), int(grid[1]))  # type: ignore[index]
             uint8_image = self.to_uint8(image)
             clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
             enhanced = clahe.apply(uint8_image).astype(np.float32)

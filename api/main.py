@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import time
 import uuid
+import warnings
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
+from http import HTTPStatus
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -25,6 +28,7 @@ import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from sar_oil_spill import __version__
@@ -36,13 +40,22 @@ from sar_oil_spill.utils import PerformanceEvaluator
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+# The byte cap bounds compressed size, not pixels: a blank 400-megapixel PNG
+# is 389 kB. The pipeline despeckles at full resolution before resizing, so
+# memory scales with pixels: a request at this limit measured +0.8 GB over
+# idle. Checked from the image header, before anything is decoded.
+MAX_IMAGE_PIXELS = 25_000_000
 MAX_BATCH_SIZE = 10
+# Starlette 0.48 renamed HTTP_413_REQUEST_ENTITY_TOO_LARGE and deprecated the
+# old name, but the `api` extra still admits releases without the new one.
+CONTENT_TOO_LARGE = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 MAX_TRACKED_JOBS = 100
 VALID_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
 
-# Batch jobs live in memory, so a job is only visible to the worker that
-# created it and is lost on restart. That is deliberate for a single-node
-# deployment; put Redis behind this before running multiple replicas.
+# Batch jobs live in memory, so a job is only visible to the worker process
+# that created it and is lost on restart. With more than one worker -- the
+# production image runs two -- a status poll can land on the other process
+# and 404. See issue #17.
 _batch_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 # asyncio only holds weak references to running tasks, so a batch task that is
@@ -53,9 +66,16 @@ _detector: OilSpillDetector | None = None
 _evaluator = PerformanceEvaluator()
 
 
+# Built from METHOD_NAMES so the single registry still drives everything: a new
+# method shows up here, in validation and in the OpenAPI dropdown automatically.
 DetectionMethod = Enum(  # type: ignore[misc]
     "DetectionMethod", {name.upper(): name for name in METHOD_NAMES}, type=str
 )
+DEFAULT_METHOD = DetectionMethod("adaptive_threshold")
+MethodParam = Annotated[
+    DetectionMethod,
+    Form(description="Segmentation method. Invalid values are rejected with 422."),
+]
 
 
 @asynccontextmanager
@@ -110,14 +130,6 @@ DetectorDep = Annotated[OilSpillDetector, Depends(get_detector)]
 
 
 # ------------------------------------------------------------------ schemas
-
-
-class DetectionParameters(BaseModel):
-    """Tunable parameters accepted by the detection endpoints."""
-
-    method: str = Field(default="adaptive_threshold", description="Segmentation method.")
-    mask_land: bool = Field(default=False, description="Exclude bright land areas.")
-    min_area_pixels: int = Field(default=100, ge=0, description="Drop smaller detections.")
 
 
 class DetectionResults(BaseModel):
@@ -194,7 +206,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy" if _detector is not None else "starting",
         version=__version__,
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         detector_ready=_detector is not None,
         active_batch_jobs=sum(1 for j in _batch_jobs.values() if j["status"] == "processing"),
     )
@@ -216,7 +228,7 @@ async def get_available_methods() -> MethodInfo:
 async def detect_oil_spill(
     detector: DetectorDep,
     image_file: Annotated[UploadFile, File(description="SAR image file.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
     min_area_pixels: Annotated[int, Form(ge=0)] = 100,
 ) -> DetectionResponse:
@@ -224,7 +236,6 @@ async def detect_oil_spill(
     job_id = str(uuid.uuid4())
     started = time.perf_counter()
 
-    _validate_method(method)
     image = await _decode_upload(image_file)
 
     # The pipeline is CPU-bound NumPy work; off-thread it so one large scene
@@ -232,12 +243,13 @@ async def detect_oil_spill(
     result = await asyncio.to_thread(
         detector.detect,
         image,
-        method=method,
+        method=method.value,
         mask_land=mask_land,
         min_area_pixels=min_area_pixels,
     )
 
-    logger.info("Job %s: %s in %.0f ms", job_id, method, (time.perf_counter() - started) * 1000)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info("Job %s: %s in %.0f ms", job_id, method.value, elapsed_ms)
     return DetectionResponse(
         success=True,
         message="Detection completed.",
@@ -252,16 +264,19 @@ async def evaluate_detection(
     detector: DetectorDep,
     image_file: Annotated[UploadFile, File(description="SAR image file.")],
     ground_truth_file: Annotated[UploadFile, File(description="Reference mask.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
 ) -> EvaluationResponse:
     """Detect, then score the prediction against an uploaded reference mask."""
-    _validate_method(method)
     image = await _decode_upload(image_file)
     ground_truth = await _decode_upload(ground_truth_file) > 127
 
     result = await asyncio.to_thread(
-        detector.detect, image, method=method, ground_truth=ground_truth, mask_land=mask_land
+        detector.detect,
+        image,
+        method=method.value,
+        ground_truth=ground_truth,
+        mask_land=mask_land,
     )
 
     if result.metrics is None:  # pragma: no cover - ground truth is always supplied here
@@ -272,7 +287,7 @@ async def evaluate_detection(
         success=True,
         evaluation_metrics=metrics,
         detailed_report=_evaluator.generate_evaluation_report(
-            result.metrics, {"method": method, "shape": list(result.mask.shape)}
+            result.metrics, {"method": method.value, "shape": list(result.mask.shape)}
         ),
         detection=_to_results(result),
     )
@@ -282,7 +297,7 @@ async def evaluate_detection(
 async def batch_process_images(
     detector: DetectorDep,
     images: Annotated[list[UploadFile], File(description="Up to 10 SAR images.")],
-    method: Annotated[str, Form()] = "adaptive_threshold",
+    method: MethodParam = DEFAULT_METHOD,
     mask_land: Annotated[bool, Form()] = False,
 ) -> BatchStatus:
     """Queue several images for background processing.
@@ -291,7 +306,6 @@ async def batch_process_images(
     temporary files once the response is sent -- a background task holding
     ``UploadFile`` objects would find them already closed.
     """
-    _validate_method(method)
     if not images:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No images supplied.")
     if len(images) > MAX_BATCH_SIZE:
@@ -313,7 +327,9 @@ async def batch_process_images(
     }
     _register_job(batch_id, job)
 
-    task = asyncio.create_task(_process_batch(detector, batch_id, payloads, method, mask_land))
+    task = asyncio.create_task(
+        _process_batch(detector, batch_id, payloads, method.value, mask_land)
+    )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
     return BatchStatus(**job)
@@ -331,15 +347,6 @@ async def get_batch_status(batch_id: str) -> BatchStatus:
 # ------------------------------------------------------------------ helpers
 
 
-def _validate_method(method: str) -> None:
-    """Reject unknown method names with a 400 that lists the valid ones."""
-    if method not in METHOD_NAMES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"Unknown method '{method}'. Available: {', '.join(METHOD_NAMES)}.",
-        )
-
-
 async def _read_upload(upload: UploadFile) -> bytes:
     """Read an upload, enforcing the extension and size limits."""
     suffix = Path(upload.filename or "").suffix.lower()
@@ -355,10 +362,43 @@ async def _read_upload(upload: UploadFile) -> bytes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Uploaded file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            CONTENT_TOO_LARGE,
             f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
         )
+    _check_dimensions(data)
     return data
+
+
+def _check_dimensions(data: bytes) -> None:
+    """Reject images over ``MAX_IMAGE_PIXELS`` without decoding them.
+
+    ``Image.open`` parses only the header. Content Pillow cannot identify is
+    refused rather than passed on: OpenCV sniffs the bytes, not the filename,
+    and decodes formats (Radiance HDR, for one) whose size we would not see.
+    """
+    try:
+        with warnings.catch_warnings():
+            # Pillow warns above its own ~89 MP default; the limit below is ours.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                width, height = image.size
+    except Image.DecompressionBombError:
+        # Pillow refuses outright above twice its default, ~179 MP.
+        raise HTTPException(
+            CONTENT_TOO_LARGE,
+            f"Image exceeds the {MAX_IMAGE_PIXELS / 1e6:.0f} megapixel limit.",
+        ) from None
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Could not decode the file as an image."
+        ) from None
+
+    if width * height > MAX_IMAGE_PIXELS:
+        raise HTTPException(
+            CONTENT_TOO_LARGE,
+            f"Image is {width}x{height} ({width * height / 1e6:.1f} megapixels); "
+            f"the limit is {MAX_IMAGE_PIXELS / 1e6:.0f} megapixels.",
+        )
 
 
 async def _decode_upload(upload: UploadFile) -> np.ndarray:

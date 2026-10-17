@@ -14,7 +14,7 @@ from sar_oil_spill.core import OilSpillDetector, SARImageProcessor
 from sar_oil_spill.models import TraditionalSegmentation
 from sar_oil_spill.utils import DataVisualizer, PerformanceEvaluator
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 __author__ = "Aaron Sequeira"
 __email__ = "aaronsequeira12@gmail.com"
 

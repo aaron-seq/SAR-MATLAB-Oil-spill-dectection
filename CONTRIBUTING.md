@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/aaronseq12/SAR-MATLAB-Oil-spill-dectection.git
+git clone https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection.git
 cd SAR-MATLAB-Oil-spill-dectection
 
 python -m venv .venv && source .venv/bin/activate
@@ -15,9 +15,24 @@ pytest && ruff check .
 ## Before opening a pull request
 
 ```bash
-pytest                          # all tests must pass
+pytest                          # all tests must pass -- bare pytest, as CI runs it
 ruff check .                    # no lint errors
-mypy src/sar_oil_spill          # advisory, not enforced in CI
+mypy src/sar_oil_spill api app.py scripts   # must be clean; enforced in CI
+```
+
+If you touched `app.py` or the deep-learning module, install their extras so
+their tests actually run instead of skipping:
+
+```bash
+pip install -e '.[api,app,dl,dev]'
+```
+
+Before claiming something works, check it from a clean export of what you are
+committing; a full working tree hides files that git is not tracking:
+
+```bash
+git archive HEAD | tar -x -C /tmp/check && cd /tmp/check
+python -m venv .v && .v/bin/pip install -e '.[api,dev]' && .v/bin/pytest
 ```
 
 If you changed anything that affects detection output, also run:

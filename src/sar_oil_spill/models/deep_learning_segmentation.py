@@ -218,6 +218,7 @@ else:  # pragma: no cover - placeholders so names exist for import guards
 
     def dice_loss(*args: object, **kwargs: object) -> object:  # type: ignore[misc]
         require_torch()
+        raise AssertionError("unreachable: require_torch() always raises here")
 
 
 class DeepLearningSegmentation:
@@ -315,10 +316,23 @@ class DeepLearningSegmentation:
         if array.max() > 1.0:
             array = array / 255.0
 
-        tensor = torch.from_numpy(array[None, None]).float().to(self.device)
+        # Each encoder level halves the image and the decoder must land back on
+        # the skip connections' exact sizes, so both sides have to be multiples
+        # of 2**depth -- otherwise e.g. 100 px floors to 12 at the bottom and
+        # the concat sees 24 vs 25. Real scenes are arbitrary sizes, so pad up
+        # and crop back. Reflect, never zeros: a zero border is dark, and dark
+        # is precisely what oil looks like.
+        height, width = array.shape
+        multiple = 2 ** getattr(self.model, "depth", 0)
+        array = np.pad(
+            array, ((0, -height % multiple), (0, -width % multiple)), mode="reflect"
+        )
+
+        tensor = torch.from_numpy(np.ascontiguousarray(array)[None, None]).to(self.device)
         self.model.eval()
         with torch.no_grad():
             probabilities = torch.sigmoid(self.model(tensor))
 
-        result = probabilities.squeeze().cpu().numpy().astype(np.float32)
+        # Index explicitly: squeeze() would also drop a genuine size-1 side.
+        result = probabilities[0, 0, :height, :width].cpu().numpy().astype(np.float32)
         return result > threshold if threshold is not None else result

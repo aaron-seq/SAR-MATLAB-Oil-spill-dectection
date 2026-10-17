@@ -11,10 +11,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
-from sar_oil_spill.config import Settings
+from sar_oil_spill.config import Settings, as_size
 from sar_oil_spill.core.sar_image_processor import SARImageProcessor
 from sar_oil_spill.models.traditional_segmentation import (
     METHOD_NAMES,
@@ -75,7 +76,7 @@ class OilSpillDetector:
     ) -> None:
         self.settings = settings or Settings()
         self.processor = processor or SARImageProcessor(
-            target_image_size=tuple(self.settings.image_processing.target_size)
+            target_image_size=as_size(self.settings.image_processing.target_size)
         )
         self.segmenter = TraditionalSegmentation(
             settings=self.settings.traditional_methods, processor=self.processor
@@ -110,7 +111,7 @@ class OilSpillDetector:
         if config.enhance_contrast:
             working = self.processor.enhance_contrast(working, method=config.enhancement_method)
         if resize:
-            working = self.processor.resize_image(working, tuple(config.target_size))
+            working = self.processor.resize_image(working, as_size(config.target_size))
         return working
 
     def detect(
@@ -200,7 +201,7 @@ class OilSpillDetector:
         image: np.ndarray,
         methods: list[str] | None = None,
         ground_truth: np.ndarray | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> dict[str, DetectionResult]:
         """Run several methods on the same scene for side-by-side comparison.
 
@@ -214,7 +215,7 @@ class OilSpillDetector:
             try:
                 results[name] = self.detect(
                     image, method=name, ground_truth=ground_truth, **kwargs
-                )  # type: ignore[arg-type]
+                )
             except Exception as error:
                 logger.error("Method '%s' failed: %s", name, error)
 

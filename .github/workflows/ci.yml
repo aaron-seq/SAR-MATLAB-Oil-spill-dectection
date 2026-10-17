@@ -19,9 +19,9 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -35,7 +35,39 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Type check
+        run: mypy src/sar_oil_spill api app.py scripts
+
       - name: Test
+        run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
+
+  optional-extras:
+    # The `dl` (PyTorch) and `app` (Streamlit) extras are optional, so the
+    # matrix above never installs them and their tests skip there. Without
+    # this job neither path is exercised -- which is how the U-Net's predict()
+    # came to crash on any image whose sides were not multiples of 16, and how
+    # app.py went its whole life without once being executed. CPU torch wheels
+    # keep the install small.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU-only PyTorch, then the package with every extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e '.[api,app,dl,dev]'
+
+      - name: Type check against real torch types
+        run: mypy src/sar_oil_spill api app.py scripts
+
+      - name: Test with the deep-learning and Streamlit paths enabled
         run: pytest --cov=src/sar_oil_spill --cov=api --cov-report=term-missing
 
   smoke:
@@ -43,9 +75,9 @@ jobs:
     # extra, no PyTorch -- which is the configuration most library users get.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -73,19 +105,58 @@ jobs:
           print("optional dependency guard OK")
           PY
 
+  audit:
+    # Advisory rather than blocking: the vulnerability database changes daily,
+    # so a hard gate here fails builds for reasons unrelated to the commit.
+    # Read the output, don't ignore it.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -e '.[api]'
+          pip-audit --progress-spinner off
+
   docker:
+    # Drives docker-compose.yml itself rather than re-implementing its
+    # commands here, so a broken compose file -- the subject of issue #4 --
+    # fails CI instead of passing unnoticed.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Build the image
-        run: docker build --target production -t sar-oil-spill:ci .
-      - name: Check the API answers its health probe
+      - uses: actions/checkout@v7
+
+      - name: Build both images through compose
+        run: docker compose --profile ui build
+
+      - name: "Enforce the image size budget (issue #5 sets 1.5 GB)"
         run: |
-          docker run -d --name api -p 8000:8000 sar-oil-spill:ci
+          bytes=$(docker image inspect sar-oil-spill:latest --format '{{.Size}}')
+          echo "production image: $((bytes / 1000000)) MB"
+          test "$bytes" -lt 1500000000 || { echo "over the 1.5 GB budget"; exit 1; }
+
+      - name: Start the API and wait for its compose healthcheck
+        run: |
+          docker compose up -d --wait --wait-timeout 180 api
+          curl -fsS http://localhost:8000/health
+
+      - name: Start the Streamlit UI and check it answers
+        run: |
+          docker compose --profile ui up -d ui
           for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/health; then
-              echo "healthy"; exit 0
+            if curl -fsS http://localhost:8501/_stcore/health; then
+              echo " -> ui healthy"; exit 0
             fi
             sleep 2
           done
-          echo "service did not become healthy"; docker logs api; exit 1
+          echo "ui did not become healthy"; exit 1
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose --profile ui logs

@@ -71,11 +71,11 @@ FROM base AS production
 
 ENV ENVIRONMENT=production
 
-# Two workers: the pipeline is CPU-bound and already off-threads its heavy work,
-# so oversubscribing cores mostly adds memory pressure. Raise with -w on hosts
-# with more vCPUs.
+# Batch status lives in process-local memory. Keep one worker so every poll
+# reaches the registry that accepted the job. Multiple workers or replicas need
+# shared job storage before they can reliably serve batch status (issue #17).
 CMD ["gunicorn", "api.main:app", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \

@@ -1,9 +1,9 @@
 """FastAPI service for SAR oil spill detection.
 
 Endpoints are versioned under ``/api/v1``. Interactive docs live at
-``/api/docs``. The service is stateless apart from an in-process batch job
-registry, so it scales horizontally behind any load balancer -- with the
-caveat noted on :data:`_batch_jobs`.
+``/api/docs``. Batch jobs use an in-process registry: run one worker in one
+live instance for reliable status polls. Jobs are lost on restart and older
+jobs may be evicted; multiple workers or replicas require shared job storage.
 """
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ MAX_TRACKED_JOBS = 100
 VALID_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"})
 
 # Batch jobs live in memory, so a job is only visible to the worker process
-# that created it and is lost on restart. With more than one worker -- the
-# production image runs two -- a status poll can land on the other process
-# and 404. See issue #17.
+# that created it and is lost on restart. The production image uses one worker;
+# with multiple workers or replicas a poll can reach another registry and 404.
+# See issue #17.
 _batch_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 # asyncio only holds weak references to running tasks, so a batch task that is

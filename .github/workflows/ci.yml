@@ -146,6 +146,33 @@ jobs:
           docker compose up -d --wait --wait-timeout 180 api
           curl -fsS http://localhost:8000/health
 
+      - name: Verify retained batch jobs through the production HTTP server
+        # No worker override: this must exercise the shipped production CMD.
+        run: python3 scripts/verify_batch_runtime.py
+
+      - name: Compare bounded batch throughput with one and two workers
+        # Identical image, data, runner, concurrency, warmup and workload.
+        # This synthetic microbenchmark records cost; it is not a capacity gate.
+        run: |
+          args="--jobs 6 --concurrency 2 --rounds 3 --polls 1"
+          python3 scripts/verify_batch_runtime.py $args > /tmp/batch-one-worker.jsonl
+          docker compose stop api
+          trap 'docker rm -f batch-two-worker-comparison' EXIT
+          docker compose run -d --name batch-two-worker-comparison --service-ports api \
+            gunicorn api.main:app --workers 2 \
+            --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 \
+            --timeout 120 --access-logfile -
+          python3 scripts/verify_batch_runtime.py $args --allow-missing-status \
+            > /tmp/batch-two-worker.jsonl
+          echo 'One worker (shipped CMD):' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/batch-one-worker.jsonl >> "$GITHUB_STEP_SUMMARY"
+          echo 'Two workers (comparison override):' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/batch-two-worker.jsonl >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore the shipped API configuration after the comparison
+        if: always()
+        run: docker compose up -d --wait --wait-timeout 180 api
+
       - name: Start the Streamlit UI and check it answers
         run: |
           docker compose --profile ui up -d ui

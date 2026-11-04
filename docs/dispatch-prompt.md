@@ -91,19 +91,21 @@ float32 must give the same loaded array on every surface and detect within
 0.02 IoU of the uint8 result.
 ````
 
-### Make batch status work across workers (#17)
+### Preserve batch polling reliability (#17)
 
 ````text
-Issue #17. Batch jobs live in a per-process dict, and the production image
-runs two gunicorn workers, so /api/v1/batch-status 404s on about half of polls
-(measured 56 of 100) even in one container. TestClient is single-process, so
-the test suite cannot see it.
+Issue #17. Batch jobs live in a per-process dict. The production command uses
+one Gunicorn worker so requests can find the same registry. Keep one process
+and one replica when using batches. Jobs remain ephemeral and the oldest entry
+is evicted after 100 retained jobs; this is not a durable queue.
 
-First write a test or CI step that starts the shipped server configuration and
-polls a batch repeatedly; confirm it fails. Then fix it -- either one worker
-(measure throughput before and after) or a shared job store. Changing the
-worker model is an infrastructure decision: present the measurements and ask
-before committing to one.
+Before changing worker or replica counts, run the shipped server and poll an
+accepted batch to completion over repeated new HTTP connections. Assert no
+404 for the retained job and 404 for an unknown ID. TestClient alone cannot
+exercise inter-process routing. Compare bounded one-image batch throughput under
+one and two workers before proposing a trade-off. Shared storage would need
+atomic updates, job ownership and recovery, not just a new dict backend.
+Read docs/product/PRODUCT.md for the decision and its reopening conditions.
 ````
 
 ### Validate against real SAR data (#13)

@@ -7,6 +7,9 @@
 | [CONFIGURATION.md](CONFIGURATION.md) | Every config key, with tuning guidance |
 | [MATLAB.md](MATLAB.md) | The original MATLAB code and how the port diverges |
 | [sar-background.md](sar-background.md) | Why SAR suits oil spill monitoring |
+| [product/PRODUCT.md](product/PRODUCT.md) | Segments, evidence, requirements, decisions, and roadmap |
+| [product/PROJECT-STATUS.md](product/PROJECT-STATUS.md) | Current delivery state and continuation steps |
+| [engineering-evidence.md](engineering-evidence.md) | Claims, test methods, security scope, and evidence limits |
 | [dispatch-prompt.md](dispatch-prompt.md) | Ready-to-paste prompt for a Claude Code session |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Development workflow and house rules |
 | [../CLAUDE.md](../CLAUDE.md) | Repository guide for AI coding agents |

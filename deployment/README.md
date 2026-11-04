@@ -31,13 +31,30 @@ adds 131 MB over idle and takes 1.0 s; one at the 25-megapixel limit adds
 size memory for workers x concurrent requests x 0.8 GB, or lower
 `MAX_IMAGE_PIXELS` in `api/main.py`.
 
-Two caveats before exposing or scaling the service:
+## Batch reliability and scaling
 
-- **Batch jobs are per-process.** `/api/v1/batch-status/{id}` only knows about
-  jobs created by the worker process that handled the upload, and jobs are lost
-  on restart. This bites inside a single container: the production image runs
-  two gunicorn workers, and 56 of 100 status polls returned 404 in a measured
-  run. Run one worker if you rely on batches, or put a shared store behind
-  them ([#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17)).
-- **CORS is wide open** (`allow_origins=["*"]`) so the demo works from
-  anywhere. Restrict it in `api/main.py` before exposing the service publicly.
+The production command runs **one Gunicorn worker** because batch jobs live in
+an in-process registry. Keep **one process and one replica** when using
+`/api/v1/batch-process` and `/api/v1/batch-status/{id}`. Adding workers or replicas
+can route a valid poll to a process that does not know the job, returning 404
+([#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17)).
+Single-image requests still run detection on worker threads.
+
+Jobs are lost on restart. The registry retains at most 100 entries and evicts
+the oldest first, including an active entry if the registry fills. This is a
+small demonstration service, with no durable queue or recovery guarantee.
+Horizontal scaling requires a separate design for shared job state, atomic
+updates, ownership and recovery; a shared dictionary alone does not provide it.
+
+Validate the shipped command using repeated status requests over new HTTP
+connections until an accepted batch completes, and check that an unknown job
+still returns 404. See the [product plan](../docs/product/PRODUCT.md) for the
+decision and acceptance gates. Reverting to multiple workers reintroduces the
+batch-status defect; stop accepting batches before such a rollback.
+
+## Public exposure
+
+CORS permits all origins (`allow_origins=["*"]`) for the demo. Restrict it in
+`api/main.py` for a chosen deployment. There is no authentication, durable job
+storage, or application-level concurrency limit; a public service needs a
+separately scoped deployment review.

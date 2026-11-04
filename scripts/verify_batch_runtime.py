@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import struct
 import time
@@ -85,6 +86,19 @@ def job(url: str, payload: bytes, polls: int, allow_missing: bool) -> tuple[floa
                     or results[0].get("filename") != "scene.png"
                     or not results[0].get("results")):
                 raise RuntimeError(f"invalid completed batch: {body}")
+            summary = results[0]["results"]
+            if (not isinstance(summary, dict) or summary.get("method") != "adaptive_threshold"
+                    or not isinstance(summary.get("oil_spill_detected"), bool)
+                    or type(summary.get("affected_area_pixels")) is not int
+                    or not 0 <= summary["affected_area_pixels"] <= 512 * 512):
+                raise RuntimeError(f"invalid detection summary: {summary}")
+            for name, upper in (("coverage_percent", 100), ("confidence_score", 1),
+                                ("processing_time_seconds", math.inf)):
+                value = summary.get(name)
+                if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                        or not math.isfinite(value)
+                        or not 0 <= value <= upper):
+                    raise RuntimeError(f"invalid detection field {name}: {value}")
             if completed_polls == 0:
                 latency = time.monotonic() - started
             completed_polls += 1

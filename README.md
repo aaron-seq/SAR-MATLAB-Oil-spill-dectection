@@ -5,9 +5,10 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://docs.astral.sh/ruff/)
 
-Detect and segment oil spills in Synthetic Aperture Radar (SAR) satellite
-imagery. A Python port and substantial rework of an original MATLAB research
-project, which is still included under [`matlab/`](matlab/).
+Compare four dark-region segmentation methods on synthetic Synthetic Aperture
+Radar (SAR) scenes. This Python research and learning tool is a rework of an
+original MATLAB project, preserved under [`matlab/`](matlab/). Real oil-spill
+detection accuracy has not been validated.
 
 ![Detection overview](docs/images/detection-overview.png)
 
@@ -16,8 +17,10 @@ project, which is still included under [`matlab/`](matlab/).
 Oil floating on water damps the short capillary waves that scatter radar energy
 back to the satellite. A slick therefore returns **less** energy than the sea
 around it and appears as a dark, unusually smooth patch. Radar supplies its own
-illumination and passes through cloud, so this works at night and in the storms
-that tend to accompany a spill — which is exactly when optical sensors fail.
+illumination and can image at night and through cloud. Slick visibility still
+depends on wind and sea conditions; low or high winds can reduce detection,
+and other phenomena can appear dark too
+([EMSA](https://www.emsa.europa.eu/earth-observation-products/how-does-sar-detection-work.html)).
 
 Every method here is built on that one observation. They differ only in how
 they decide where "dark and smooth" begins.
@@ -63,6 +66,7 @@ sar-oil-spill benchmark --samples 20          # score every method
 sar-oil-spill dataset /path/to/dataset        # summarise a dataset on disk
 
 uvicorn api.main:app --reload                 # REST API at :8000/api/docs
+pip install -e '.[app]'                       # install the optional browser UI
 streamlit run app.py                          # browser UI
 docker compose up --build                     # containerised API
 ```
@@ -107,7 +111,7 @@ Pick by what your downstream use actually needs.
 | Method | How it decides | Best for |
 |---|---|---|
 | **Adaptive threshold** | Divides by a wide-window background estimate, then Otsu on the ratio | Sharp boundaries; the fastest option |
-| **K-means clustering** | Clusters grey levels, takes the darkest cluster | Highest area accuracy; no false alarms |
+| **K-means clustering** | Clusters grey levels, takes the darkest cluster | Highest area overlap in the synthetic sample; precision 1.000 there |
 | **Superpixel clustering** | SLIC superpixels averaged, then Otsu, then distance filtering | Very conservative; heavy speckle |
 | **Fuzzy edge detection** | Gaussian fuzzy memberships on image gradients, keeps smooth *and* dark regions | Balanced; exploits texture, not just brightness |
 
@@ -193,9 +197,13 @@ print(result.metrics.jaccard_index)     # 0.965
 print(result.summary())                 # JSON-safe dict
 
 # Compare every method on the same scene
-for name, r in detector.compare_methods(scene.image, scene.oil_mask).items():
+for name, r in detector.compare_methods(scene.image, ground_truth=scene.oil_mask).items():
     print(f"{name:24} IoU {r.metrics.jaccard_index:.3f}")
 ```
+
+`confidence` is a normalized contrast heuristic: the background median minus
+the detected-region mean, divided by the image's 1st–99th percentile range and
+clipped to [0, 1]. It is not a calibrated probability that a region contains oil.
 
 Working with your own data:
 
@@ -268,8 +276,8 @@ read is refused rather than passed to OpenCV.
 
 Detection runs on a worker thread (`asyncio.to_thread`) so a large scene cannot
 block the event loop.
-See [`deployment/README.md`](deployment/README.md) for the two things to change
-before exposing this publicly.
+See [`deployment/README.md`](deployment/README.md) for batch-state limits,
+sizing, and exposure guidance.
 
 ## Deep learning (optional)
 
@@ -356,6 +364,7 @@ production image exceeds 1.5 GB.
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every config key, with tuning guidance and measured parameter sweeps |
 | [docs/MATLAB.md](docs/MATLAB.md) | The original MATLAB code, mapped function by function to the port |
 | [docs/sar-background.md](docs/sar-background.md) | Why SAR suits oil spill monitoring |
+| [docs/product/PRODUCT.md](docs/product/PRODUCT.md) | Evidence, requirements, decisions, and Now / Next / Later roadmap |
 | [deployment/README.md](deployment/README.md) | Deployment targets, sizing, and what to change before going public |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and house rules |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and why |
@@ -380,12 +389,15 @@ prompt with task blocks for the open work.
 - **No georeferencing.** Input is treated as a plain raster; there is no
   GeoTIFF/projection handling, so areas are reported in pixels, not m².
 - **No trained model.** The U-Net is architecture only.
+- **Confidence is a contrast heuristic**, not a calibrated oil probability.
 - **8-bit input assumed.** Float32 σ⁰ TIFFs fail to load, and low-valued
   uint16 (as in Sentinel-1 GRD) is reduced to a few grey levels; see
   [#18](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/18).
-- **Batch state is per-process.** With the production image's two workers,
-  `/batch-status` returns 404 for about half of polls (measured 56 of 100);
-  see [#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17).
+- **Batch state is ephemeral and per-process.** The production command uses
+  one worker. Keep one process and one replica when using batches; jobs are lost
+  on restart and the oldest entry is evicted after 100 retained jobs. Multiple
+  workers or replicas cannot share status; see
+  [#17](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/issues/17).
 
 ## Contributing
 

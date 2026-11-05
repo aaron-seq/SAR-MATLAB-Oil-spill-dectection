@@ -1,13 +1,26 @@
 # Background: SAR and oil spill sensing
 
-Reference notes on why Synthetic Aperture Radar suits marine oil spill
-monitoring. The algorithms that act on this are documented in the
-[README](../README.md); the MATLAB original is covered in [MATLAB.md](MATLAB.md).
+Oil can damp the short surface waves that return radar energy, producing a dark
+patch in SAR imagery. SAR can image at night and through cloud, but slick
+visibility depends on wind and sea conditions. Low winds can hide the contrast;
+high winds can also reduce detection. Biological films and other natural
+phenomena can produce similar dark regions. A dark patch is therefore a
+candidate, not confirmation of oil
+([EMSA explanation](https://www.emsa.europa.eu/earth-observation-products/how-does-sar-detection-work.html),
+checked 2026-11-04).
 
----
+Operational assessment needs more context. EMSA's CleanSeaNet operators combine
+imagery with meteorological, oceanographic, and vessel information when assessing
+possible pollution. ESA SNAP's oil-spill operator assumes calibration and speckle
+filtering before dark-spot detection. These are useful references for the gaps
+between a plain-raster experiment and a monitoring workflow
+([CleanSeaNet](https://www.emsa.europa.eu/csn-menu.html),
+[SNAP 9 operator](https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.feature.extraction.ui/operators/OilSpillDetectionOp.html),
+checked 2026-11-04).
 
-Synthetic Aperture Radar (SAR) is a remote sensing technology used to create high-resolution images of the Earth's surface using radio waves. Unlike optical sensors, SAR is not dependent on sunlight and can operate day and night, as it actively emits microwave pulses and measures their reflections. The system typically consists of an antenna mounted on an aircraft or satellite, which transmits pulses toward the ground and receives the backscattered signals. SAR images provide valuable information about various natural and anthropogenic features, including terrain, vegetation, urban areas, and water bodies.
-
-In the context of SAR images, SAR has proven to be an indispensable tool. When an oil spill occurs in a water body, it changes the surface properties, leading to differences in the interaction of SAR waves with the affected area compared to the surrounding water. Oil on the water's surface dampens the waves, resulting in lower backscatter, which is the radar signal reflected back to the antenna. This difference in backscatter allows SAR to identify and delineate the extent of the oil spill. Additionally, the radar's sensitivity to roughness variations can reveal the thickness and concentration of the oil slick, aiding in the assessment of the spill's potential impact on the environment. 
-
-SAR's ability to operate independently of weather and lighting conditions makes it particularly valuable for continuous monitoring and rapid response during oil spill events. It can cover vast areas in a single pass, providing near-real-time information to emergency responders and decision-makers. Furthermore, SAR can penetrate clouds, which often obscure optical satellite data, ensuring consistent monitoring even in regions prone to cloud cover. By detecting oil spills early and accurately, SAR helps facilitate timely and effective response efforts, mitigating potential environmental and economic damages. The integration of SAR data with other sources, such as optical imagery and in situ measurements, enhances the overall effectiveness of oil spill monitoring and response strategies.
+This repository compares dark-region segmentation on synthetic scenes. It has
+no real-data validation, look-alike classifier, or georeferencing, and does not
+estimate oil thickness or concentration. Its confidence score measures image
+contrast, not the probability of oil. See the [README](../README.md) for measured
+synthetic results and limitations, [product plan](product/PRODUCT.md) for evidence
+gates, and [MATLAB guide](MATLAB.md) for the historical implementation.

@@ -56,7 +56,7 @@ def wait_ready(url: str) -> None:
             status, body = request(url + "/health")
             if status == 200 and body.get("detector_ready") is True:
                 return
-        except (URLError, TimeoutError):
+        except (URLError, TimeoutError, ConnectionError):
             pass  # Startup is the only place connection failures are retried.
         time.sleep(0.2)
     raise RuntimeError("server did not become ready within 180 seconds")

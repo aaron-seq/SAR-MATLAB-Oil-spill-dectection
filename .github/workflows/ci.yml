@@ -164,6 +164,7 @@ jobs:
             --timeout 120 --access-logfile -
           python3 scripts/verify_batch_runtime.py $args --allow-missing-status \
             > /tmp/batch-two-worker.jsonl
+          cat /tmp/batch-one-worker.jsonl /tmp/batch-two-worker.jsonl
           echo 'One worker (shipped CMD):' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/batch-one-worker.jsonl >> "$GITHUB_STEP_SUMMARY"
           echo 'Two workers (comparison override):' >> "$GITHUB_STEP_SUMMARY"

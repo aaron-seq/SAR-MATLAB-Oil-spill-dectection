@@ -27,7 +27,7 @@ head CI remain delivery gates. Issues and milestone stay open.
 
 Implementation: four original files plus one focused readiness regression file;
 no dependency/API/config/storage/service additions. Helper is 166 lines and
-CI adds 27 lines (budgets 180/40). Jobs remain
+CI adds 28 lines (budgets 180/40). Jobs remain
 ephemeral, oldest-first capped at 100; multiple workers/replicas unsupported.
 Both blind designs and the skeptic chose this bounded repair over shared state.
 Aaron's product acceptance remains pending. Agent reviews are not human approval.
@@ -49,6 +49,11 @@ Aaron's product acceptance remains pending. Agent reviews are not human approval
   a connection reset during comparison-server startup failed the Docker job.
   Only the bounded readiness probe was changed. Current-head results and
   worker measurements are linked on PR #27 and the Project status update.
+- Published [run 41971504417](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/runs/41971504417)
+  passed all eight jobs at `2ac5140`, including shipped Gunicorn batch polling,
+  the matched image comparison and UI health. Optional extras: 223 passes/one
+  skip. The following evidence-only change prints existing measurements into
+  CI logs; inspect PR #27 for the newest head/checks before integration.
 - A fresh installed-wheel walkthrough completed the corrected Python comparison
   and declared console demo, producing both PNGs. Fresh malformed-result,
   image/job-failure and simulated-timeout checks rejected invalid completion.

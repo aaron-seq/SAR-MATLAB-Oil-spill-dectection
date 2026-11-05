@@ -134,6 +134,15 @@ reviewed the one-line change and the startup/deadline/post-acceptance oracles.
 Current-head hosted results and matched image measurements are recorded on
 [PR #27](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/pull/27).
 
+Published [run 41971504417](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/runs/41971504417)
+passed all eight jobs on `2ac5140`: Python 3.10–3.13, optional extras, base
+smoke, dependency audit and Docker. The optional-extra suite reported 223 passes
+and one skip. Docker verified the shipped command, a completed batch and 100
+fresh status polls with zero missing statuses, the matched worker comparison,
+restoration and UI health. The comparison output is also printed to CI logs
+for API-readable evidence; CI adds 28 lines in total, within its 40-line budget.
+Inspect PR #27 for the newest head after documentation-only updates.
+
 ## Review provenance
 
 - `baseline_claims`: immutable-main baseline, API/CLI claims and design A.

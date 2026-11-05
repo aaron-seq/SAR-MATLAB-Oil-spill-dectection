@@ -47,10 +47,13 @@ and storage, requiring atomic transitions, ownership, retention and recovery
 without an evidenced distributed workload. This reversible configuration
 change needs no new endpoint, dependency, setting, storage format or service.
 
-Budget: four implementation/CI files, one missing real-server test seam
+Initial budget: four implementation/CI files, one missing real-server test seam
 (`scripts/verify_batch_runtime.py`, at most 180 lines), at most 40 added CI
 lines; documentation in existing guides plus one combined product brief,
 this evidence appendix and one current checkpoint. No algorithm changes.
+The first container run exposed a readiness connection reset. A justified
+fifth file, `tests/test_runtime_check.py`, adds eight startup/deadline/error
+regressions; the production code and public surface remain unchanged.
 
 | Boundary / asset | Control or oracle | Coverage and limits |
 |---|---|---|
@@ -114,6 +117,23 @@ logs remain in local TEMP directories named `sar-delivery-20261104`,
 `sar-baseline-1bb8eb0` and `sar-17-runtime`. These are local, non-durable evidence;
 CI and this safe summary preserve the reproducible commands and limits.
 
+## CI recovery, 2026-11-05
+
+At `6695667`, [run 41879472016](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/actions/runs/41879472016)
+passed all seven non-container jobs. The actual shipped Gunicorn command also
+passed valid-batch completion and 100 fresh status polls. The separate worker
+comparison then failed during startup with a direct `ConnectionResetError`;
+the UI step was skipped. This was a harness failure, not a failed batch check.
+
+Readiness now catches `ConnectionError` within its existing 180-second bound.
+No request or accepted-job retry was added. Implementer-observed Red: four
+focused failures/four passes; Green: eight passes. Full local tests: **190
+passed, two app/dl skips**; configured lint and mypy pass, also personally
+rerun by the primary agent on delivery revision `2e736c9`. A fresh checker
+reviewed the one-line change and the startup/deadline/post-acceptance oracles.
+Current-head hosted results and matched image measurements are recorded on
+[PR #27](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/pull/27).
+
 ## Review provenance
 
 - `baseline_claims`: immutable-main baseline, API/CLI claims and design A.
@@ -127,6 +147,9 @@ CI and this safe summary preserve the reproducible commands and limits.
   an installed wheel from a tracked export. No remaining material findings.
 - `publication_review`: checked changed docs, local links, source claims,
   issue/Project read-backs and PR text. Corrections applied before publication.
+- `ci_recovery_review`: verified the hosted failure, reviewed the readiness
+  fix, and ran eight focused tests plus malformed-health/accepted-job failure
+  checks. These transport mocks do not substitute for the hosted container run.
 
 Primary agent verified the missing Git files, predecessor diff/CI, clean install,
 tests/lint/types/demo, scanner results, design evidence and source references.

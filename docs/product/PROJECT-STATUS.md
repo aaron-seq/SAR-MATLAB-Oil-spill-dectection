@@ -1,6 +1,6 @@
 # Project status and continuation
 
-Last verified: 2026-11-04T23:09:09+05:30 (Asia/Kolkata).
+Last verified: 2026-11-05 (Asia/Kolkata, UTC+05:30).
 
 [Product/roadmap/decisions](PRODUCT.md) · [Evidence](../engineering-evidence.md) ·
 [Private Project 14](https://github.com/users/aaron-seq/projects/14) ·
@@ -8,12 +8,15 @@ Last verified: 2026-11-04T23:09:09+05:30 (Asia/Kolkata).
 
 ## Current state
 
-Branch `codex/17-batch-job-reliability` is stacked on existing
+Delivery [draft PR #27](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/pull/27),
+branch `codex/17-batch-job-reliability`, is stacked on existing
 [PR #12](https://github.com/aaron-seq/SAR-MATLAB-Oil-spill-dectection/pull/12),
 whose head is `fed7a1c33f19b82d9112a4ea162e6095a07cd822`;
-`main` remains `1bb8eb0`. Delivered runtime/test changes are at `d4684c6`;
-later commits document that code. Use the delivery PR head for the current
-documentation revision and inspect its checks rather than reusing PR #12's CI.
+`main` remains `1bb8eb0`. Runtime changes start at `d4684c6`, followed by a
+bounded-readiness recovery and its regression tests. Use PR #27's head for the
+current code/documentation revision and inspect its checks rather than reusing
+PR #12's CI. The [evidence appendix](../engineering-evidence.md#ci-recovery-2026-11-05)
+records the first run's startup failure and correction.
 The prerequisite's source restoration and existing fixes were reused with
 their attribution. Neither PR is merged; no release or deployment was made.
 
@@ -22,23 +25,30 @@ New scope is #17's single-worker default and real-server verification, plus
 working comparison example and honest scientific wording. Review and current
 head CI remain delivery gates. Issues and milestone stay open.
 
-Implementation: four files, no dependency/API/config/storage/service additions;
-helper at most 180 lines and CI addition at most 40 lines. Jobs remain
+Implementation: four original files plus one focused readiness regression file;
+no dependency/API/config/storage/service additions. Helper is 166 lines and
+CI adds 27 lines (budgets 180/40). Jobs remain
 ephemeral, oldest-first capped at 100; multiple workers/replicas unsupported.
 Both blind designs and the skeptic chose this bounded repair over shared state.
 Aaron's product acceptance remains pending. Agent reviews are not human approval.
 
 ## Validation and gaps
 
-- Primary-agent clean install and installed demo pass. On delivery code
-  `d4684c6`, primary-agent checks pass: 182 tests/two app/dl skips (84% combined
-  coverage), configured lint, and mypy over 20 files.
+- Primary-agent clean install and installed demo pass. Original delivery code
+  passed 182 tests/two app/dl skips (84% combined coverage), lint and mypy over
+  20 files. On readiness revision `2e736c9`, the primary agent personally reran
+  190 tests/two skips, lint and types successfully. Fresh review also verified
+  startup recovery, its deadline and propagation of accepted-job failures.
 - Implementer and fresh verifier reproduced two-worker false 404s over actual
   local Uvicorn HTTP, then one-worker completion and 100 fresh polls without 404.
   Windows Uvicorn is not the shipped Linux Gunicorn/container command.
 - Bounded one/two-worker local comparisons completed; variable timings support
   no capacity claim. The new container CI runs the shipped command unchanged
   and a separately labeled matched worker comparison.
+- Initial hosted run passed seven jobs and the shipped-container batch check;
+  a connection reset during comparison-server startup failed the Docker job.
+  Only the bounded readiness probe was changed. Current-head results and
+  worker measurements are linked on PR #27 and the Project status update.
 - A fresh installed-wheel walkthrough completed the corrected Python comparison
   and declared console demo, producing both PNGs. Fresh malformed-result,
   image/job-failure and simulated-timeout checks rejected invalid completion.
@@ -84,5 +94,6 @@ for all users. #22's branch deletion was not authorized or performed.
    Do not merge, deploy, close the milestone or claim operational accuracy here.
 
 Local source/agent worktrees and TEMP evidence are retained. Worktree
-`sar-17` / branch `codex/17-batch-worker-fix` contains the implementer's commits;
+`sar-17` / branch `codex/17-readiness-check` contains the latest implementer commit;
+`codex/17-batch-worker-fix` preserves its earlier commits;
 the delivery branch contains their integrated equivalents. No WIP was discarded.
